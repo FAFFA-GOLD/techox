@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --bg-top: #e8f2f0;
+  --bg-bottom: #f4f7f6;
+  --ink: #14231f;
+  --muted: #5b6f69;
+  --line: #c9d9d4;
+  --surface: rgba(255, 255, 255, 0.82);
+  --accent: #0f766e;
+  --accent-deep: #0b5a54;
+  --income: #0f766e;
+  --expense: #b45309;
+  --warn: #9a3412;
+}
+
+@theme inline {
+  --color-background: var(--bg-bottom);
+  --color-foreground: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --font-sans: var(--font-noto-sans);
+  --font-display: var(--font-noto-sans);
+}
+
+body {
+  min-height: 100dvh;
+  color: var(--ink);
+  font-family: var(--font-sans), "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #cfe8e2 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #d7e4f0 0%, transparent 50%),
+    linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+  background-attachment: fixed;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
