@@ -30,6 +30,11 @@ import {
   paceToneFromGap,
   type PaceTone,
 } from "@/lib/daily-spend-pace";
+import {
+  defaultSelectedDateForMonth,
+  monthKeyInTimeZone,
+  todayKeyInTimeZone,
+} from "@/lib/dates";
 import { periodNavButtonClassName } from "@/components/month-nav";
 import type {
   DailySpendCategory,
@@ -107,8 +112,11 @@ export function CalendarClient({
 }: Props) {
   const router = useRouter();
   const monthDate = parseISO(`${monthKey}-01`);
+  const todayStr = todayKeyInTimeZone();
+  const todayMonth = monthKeyInTimeZone();
   const prev = format(addMonths(monthDate, -1), "yyyy-MM");
   const next = format(addMonths(monthDate, 1), "yyyy-MM");
+  const defaultDateForMonth = (key: string) => defaultSelectedDateForMonth(key);
 
   const holidaySet = useMemo(
     () => new Set(holidays.map((h) => h.date)),
@@ -185,7 +193,7 @@ export function CalendarClient({
   const weekdayCount = countRemainingWorkingWeekdaysInMonth(
     monthKey,
     holidaySet,
-    format(new Date(), "yyyy-MM-dd"),
+    todayStr,
   );
 
   const miscSpent = categories
@@ -292,7 +300,10 @@ export function CalendarClient({
                   category: activeListCategoryId,
                   compare: compareMonth,
                 })
-              : calUrl(prev, { date: `${prev}-01`, compare: compareMonth })
+              : calUrl(prev, {
+                  date: defaultDateForMonth(prev),
+                  compare: compareMonth,
+                })
           }
           aria-label="前月へ"
           className={periodNavButtonClassName}
@@ -303,6 +314,16 @@ export function CalendarClient({
           <h1 className="pointer-events-none truncate text-xl font-bold tracking-tight sm:text-2xl">
             {format(monthDate, "yyyy年M月", { locale: ja })}
           </h1>
+          {monthKey === todayMonth && selectedDate !== todayStr ? (
+            <p className="mt-1">
+              <Link
+                href={calUrl(monthKey, { date: todayStr, compare: compareMonth })}
+                className="text-xs text-accent hover:underline"
+              >
+                今日（{todayStr}）へ
+              </Link>
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
             <a
               href={`/api/export/daily/csv?month=${monthKey}`}
@@ -326,7 +347,10 @@ export function CalendarClient({
                   category: activeListCategoryId,
                   compare: compareMonth,
                 })
-              : calUrl(next, { date: `${next}-01`, compare: compareMonth })
+              : calUrl(next, {
+                  date: defaultDateForMonth(next),
+                  compare: compareMonth,
+                })
           }
           aria-label="翌月へ"
           className={periodNavButtonClassName}

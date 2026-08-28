@@ -1,6 +1,10 @@
 import { format } from "date-fns";
 import { CalendarClient } from "@/components/calendar-client";
 import {
+  defaultSelectedDateForMonth,
+  monthKeyInTimeZone,
+} from "@/lib/dates";
+import {
   ensureDailySpendCategories,
   fetchDailyScratchpad,
   fetchDailySpendEntriesInRange,
@@ -21,11 +25,9 @@ type Props = {
 
 export default async function CalendarPage({ searchParams }: Props) {
   const params = await searchParams;
-  const today = new Date();
-  const monthKey = params.month ?? format(today, "yyyy-MM");
+  const monthKey = params.month ?? monthKeyInTimeZone();
   const selectedDate =
-    params.date ??
-    (params.month ? `${monthKey}-01` : format(today, "yyyy-MM-dd"));
+    params.date ?? defaultSelectedDateForMonth(monthKey);
   const view = params.view === "list" ? "list" : "calendar";
   const compareMonth =
     params.compare && /^\d{4}-\d{2}$/.test(params.compare) && params.compare >= "2026-08"

@@ -17,12 +17,12 @@ import {
   MISC_BUDGET_NAME,
   resolveCategoryBudget,
 } from "@/lib/types";
+import { todayKeyInTimeZone, APP_TIME_ZONE } from "@/lib/dates";
 
-function localDateKey(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function exportAsOfDate(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE }).format(
+    d,
+  );
 }
 
 export function monthBounds(monthKey: string): { start: string; end: string } {
@@ -87,7 +87,7 @@ export function buildDailySpendExportModel(
   const weekdayCount = countRemainingWorkingWeekdaysInMonth(
     monthKey,
     holidayDates,
-    localDateKey(generatedAt),
+    exportAsOfDate(generatedAt),
   );
 
   const spentByCategoryId = new Map<string, number>();
