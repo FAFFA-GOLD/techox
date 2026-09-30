@@ -1,5 +1,6 @@
 import "server-only";
 
+import { ensurePdfNodeDomGlobals } from "@/lib/pdf-node-shim";
 import fs from "fs/promises";
 import path from "path";
 import {
@@ -77,6 +78,7 @@ export async function savePayslipFile(
 export async function extractPayslipFromPdf(
   bytes: Uint8Array,
 ): Promise<PayslipParseResult> {
+  ensurePdfNodeDomGlobals();
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {
