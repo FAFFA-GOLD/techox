@@ -138,6 +138,9 @@ export default async function ForecastPage({ searchParams }: Props) {
 
   return (
     <div className="grid gap-5">
+      <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-3 text-sm text-muted">
+        キャッシュフローは、毎日の支出への統合が終わったあとに見直します。この画面は以前の給与期の集計のままです。
+      </p>
       <PeriodNav
         period={period}
         basePath="/forecast"
@@ -289,7 +292,7 @@ export default async function ForecastPage({ searchParams }: Props) {
                       className={`sticky left-0 z-10 px-3 py-2 ${stickyBg(row, currentKey)}`}
                     >
                       <Link
-                        href={`/dashboard?period=${row.period.key}`}
+                        href="/calendar"
                         className="block"
                       >
                         <div className="flex flex-wrap items-center gap-1.5">

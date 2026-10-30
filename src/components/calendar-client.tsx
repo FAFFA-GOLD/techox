@@ -23,6 +23,14 @@ import {
   updateDailySpendCategory,
   updateDailySpendEntry,
 } from "@/app/actions";
+import { AccountBalanceStrip } from "@/components/account-balance-strip";
+import { EditPopover } from "@/components/edit-popover";
+import {
+  defaultAccountId,
+  PaymentSourceField,
+} from "@/components/payment-source-field";
+import { ScheduledRulesPanel } from "@/components/scheduled-rules-panel";
+import type { AccountBalanceView } from "@/lib/account-display";
 import { formatYen } from "@/lib/money";
 import {
   buildMonthPaceWeights,
@@ -37,15 +45,19 @@ import {
 } from "@/lib/dates";
 import { periodNavButtonClassName } from "@/components/month-nav";
 import type {
+  AssetAccount,
   DailySpendCategory,
   DailySpendEntry,
   DailySpendHoliday,
   DailySpendMakikoOff,
+  ScheduledRule,
 } from "@/lib/types";
 import {
   countRemainingWorkingWeekdaysInMonth,
   isConfidentialCategory,
   isExcludedFromMonthTotalCategory,
+  isFixedCostCategory,
+  isIncomeEntry,
   isLegacyPocketMonth,
   isLunchCategory,
   isMiscGroupCategory,
@@ -60,9 +72,8 @@ import {
 } from "@/lib/types";
 import { DailySpendCategoryList } from "@/components/daily-spend-category-list";
 import { DailySpendCharts } from "@/components/daily-spend-charts";
+import { ConfidentialExpensePanel } from "@/components/confidential-expense-panel";
 import { ScratchpadPanel } from "@/components/scratchpad-panel";
-import { SuicaBalancePanel } from "@/components/suica-balance-panel";
-import type { SuicaDisplayBalance } from "@/lib/types";
 
 type ViewMode = "calendar" | "list";
 
@@ -78,7 +89,10 @@ type Props = {
   view: ViewMode;
   listCategoryId: string;
   scratchpadBody: string;
-  suica: SuicaDisplayBalance;
+  accounts: AssetAccount[];
+  balances: AccountBalanceView[];
+  rules: ScheduledRule[];
+  scheduleError: string | null;
 };
 
 function calUrl(
@@ -108,7 +122,10 @@ export function CalendarClient({
   view,
   listCategoryId,
   scratchpadBody,
-  suica,
+  accounts,
+  balances,
+  rules,
+  scheduleError,
 }: Props) {
   const router = useRouter();
   const monthDate = parseISO(`${monthKey}-01`);
@@ -140,6 +157,7 @@ export function CalendarClient({
   const dayTotals = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of entries) {
+      if (isIncomeEntry(e) || !e.category_id) continue;
       if (excludedCategoryIds.has(e.category_id)) continue;
       map.set(e.date, (map.get(e.date) ?? 0) + e.amount);
     }
@@ -149,6 +167,7 @@ export function CalendarClient({
   const dayCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of entries) {
+      if (isIncomeEntry(e) || !e.category_id) continue;
       if (excludedCategoryIds.has(e.category_id)) continue;
       map.set(e.date, (map.get(e.date) ?? 0) + 1);
     }
@@ -158,6 +177,7 @@ export function CalendarClient({
   const spentByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of entries) {
+      if (isIncomeEntry(e) || !e.category_id) continue;
       map.set(e.category_id, (map.get(e.category_id) ?? 0) + e.amount);
     }
     return map;
@@ -178,13 +198,31 @@ export function CalendarClient({
   const confidentialEntryCount = confidentialCategoryId
     ? entries.filter((e) => e.category_id === confidentialCategoryId).length
     : 0;
-  const monthTotal = entries.reduce((s, e) => {
-    if (excludedCategoryIds.has(e.category_id)) return s;
+  const paceExcludedIds = useMemo(() => {
+    const ids = new Set(excludedCategoryIds);
+    for (const c of categories) {
+      if (isFixedCostCategory(c.name)) ids.add(c.id);
+    }
+    return ids;
+  }, [categories, excludedCategoryIds]);
+
+  const monthIncome = entries.reduce((s, e) => {
+    if (!isIncomeEntry(e)) return s;
     return s + e.amount;
   }, 0);
-  const monthEntryCount = entries.filter(
-    (e) => !excludedCategoryIds.has(e.category_id),
-  ).length;
+  const monthExpenseAll = entries.reduce((s, e) => {
+    if (isIncomeEntry(e)) return s;
+    return s + e.amount;
+  }, 0);
+  const monthTotal = entries.reduce((s, e) => {
+    if (isIncomeEntry(e) || !e.category_id) return s;
+    if (paceExcludedIds.has(e.category_id)) return s;
+    return s + e.amount;
+  }, 0);
+  const monthEntryCount = entries.filter((e) => {
+    if (isIncomeEntry(e) || !e.category_id) return false;
+    return !paceExcludedIds.has(e.category_id);
+  }).length;
 
   const monthPointsTotal = entries.reduce(
     (s, e) => s + (e.points_amount ?? 0),
@@ -244,7 +282,8 @@ export function CalendarClient({
 
     const nonExcludedByDate = new Map<string, number>();
     for (const e of entries) {
-      if (excludedCategoryIds.has(e.category_id)) continue;
+      if (isIncomeEntry(e) || !e.category_id) continue;
+      if (paceExcludedIds.has(e.category_id)) continue;
       nonExcludedByDate.set(
         e.date,
         (nonExcludedByDate.get(e.date) ?? 0) + e.amount,
@@ -269,7 +308,7 @@ export function CalendarClient({
     return tones;
   }, [
     entries,
-    excludedCategoryIds,
+    paceExcludedIds,
     monthKey,
     pocketBudgetTotal,
     holidaySet,
@@ -421,8 +460,26 @@ export function CalendarClient({
         ) : null}
       </div>
 
+      <AccountBalanceStrip balances={balances} />
+
       <section className="grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-income/30 bg-income/10 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted">総収入</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-income">
+              {formatYen(monthIncome)}
+            </p>
+            <p className="mt-1 text-xs text-muted">この月の収入（取引を含む）</p>
+          </div>
+          <div className="rounded-xl border border-expense/35 bg-expense/10 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-expense">
+              {formatYen(monthExpenseAll)}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              交通費・固定費・機密費を含むこの月の支出
+            </p>
+          </div>
           <div className="rounded-xl border border-accent/40 bg-accent/10 p-4">
             <p className="text-xs uppercase tracking-wide text-muted">
               小遣い残り（家族＋昼食＋雑費）
@@ -434,11 +491,6 @@ export function CalendarClient({
                 }`}
               >
                 {formatYen(pocketRemaining)}
-              </span>
-              <span className="text-sm tabular-nums text-muted">
-                Suica{" "}
-                {suica.balance == null ? "未登録" : formatYen(suica.balance)}
-                <span className="ml-1 text-xs">（カード残）</span>
               </span>
             </p>
             <p className="mt-1 text-xs text-muted">
@@ -467,7 +519,7 @@ export function CalendarClient({
               <span className="ml-1 text-xs">（参考・予算外）</span>
             </p>
             <p className="mt-1 text-xs text-muted">
-              {monthEntryCount} 件 · 交通費・機密費を除くカレンダー月の合計
+              {monthEntryCount} 件 · 交通費・機密費・固定費を除く小遣いの合計
             </p>
           </div>
         </div>
@@ -476,7 +528,7 @@ export function CalendarClient({
           {categoryStats
             .filter(
               (c) =>
-                !isTransportCategory(c.name) && !isConfidentialCategory(c.name),
+                !isConfidentialCategory(c.name) && !isFixedCostCategory(c.name),
             )
             .map((c) => (
             <div
@@ -488,9 +540,19 @@ export function CalendarClient({
                   className="h-2.5 w-2.5 rounded-full"
                   style={{ backgroundColor: c.color }}
                 />
-                <p className="text-xs uppercase tracking-wide text-muted">
+                <p className="flex-1 text-xs uppercase tracking-wide text-muted">
                   {c.name}
                 </p>
+                {!c.shared && !c.miscChild ? (
+                  <EditPopover title={`${c.name}の月予算`}>
+                    <BudgetPopup
+                      category={
+                        categories.find((cat) => cat.id === c.id) ?? c
+                      }
+                      monthKey={monthKey}
+                    />
+                  </EditPopover>
+                ) : null}
               </div>
               {c.shared ? (
                 <>
@@ -553,23 +615,18 @@ export function CalendarClient({
           ))}
         </div>
 
-        {(() => {
-          const transportStat = categoryStats.find((c) =>
-            isTransportCategory(c.name),
-          );
-          if (!transportStat) return null;
-          return (
-            <SuicaBalancePanel
-              suica={suica}
-              transportMonthSpent={transportStat.spent}
-              transportMonthBudget={transportStat.monthly_budget}
-              transportMonthRemaining={transportStat.remaining}
-              confidentialMonthSpent={confidentialTotal}
-              confidentialEntryCount={confidentialEntryCount}
-            />
-          );
-        })()}
+        <ConfidentialExpensePanel
+          monthSpent={confidentialTotal}
+          entryCount={confidentialEntryCount}
+        />
       </section>
+
+      <ScheduledRulesPanel
+        rules={rules}
+        accounts={accounts}
+        categories={categories}
+        loadError={scheduleError}
+      />
 
       <DailySpendCharts
         monthKey={monthKey}
@@ -587,6 +644,7 @@ export function CalendarClient({
           categories={categories}
           entries={entries}
           categoryId={activeListCategoryId}
+          accounts={accounts}
         />
       ) : (
       <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_1fr]">
@@ -752,8 +810,8 @@ export function CalendarClient({
             entries={dayEntries}
             isHoliday={selectedIsHoliday}
             isMakikoOff={selectedIsMakikoOff}
+            accounts={accounts}
           />
-          <BudgetEditor categories={categories} monthKey={monthKey} />
         </div>
       </div>
       )}
@@ -767,14 +825,23 @@ function DayPanel({
   entries,
   isHoliday,
   isMakikoOff,
+  accounts,
 }: {
   date: string;
   categories: DailySpendCategory[];
   entries: DailySpendEntry[];
   isHoliday: boolean;
   isMakikoOff: boolean;
+  accounts: AssetAccount[];
 }) {
-  const dayTotal = entries.reduce((s, e) => s + e.amount, 0);
+  const dayTotal = entries.reduce((s, e) => {
+    if (isIncomeEntry(e)) return s;
+    return s + e.amount;
+  }, 0);
+  const dayIncome = entries.reduce((s, e) => {
+    if (!isIncomeEntry(e)) return s;
+    return s + e.amount;
+  }, 0);
   const dayPoints = entries.reduce((s, e) => s + (e.points_amount ?? 0), 0);
   const [editing, setEditing] = useState<DailySpendEntry | null>(null);
   const [holidayPending, startHoliday] = useTransition();
@@ -794,6 +861,11 @@ function DayPanel({
             {formatYen(dayTotal)}
           </span>
           （{entries.length}件）
+          {dayIncome > 0 ? (
+            <span className="ml-2 tabular-nums text-income">
+              · 収入 {formatYen(dayIncome)}
+            </span>
+          ) : null}
           {dayPoints > 0 ? (
             <span className="ml-2 tabular-nums">
               · ポイント {formatYen(dayPoints)}
@@ -884,6 +956,7 @@ function DayPanel({
         key={editing?.id ?? `new-${date}`}
         date={date}
         categories={categories}
+        accounts={accounts}
         editing={editing}
         onCancel={() => setEditing(null)}
       />
@@ -904,12 +977,24 @@ function DayPanel({
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
-                  {e.daily_spend_categories?.name ?? "用途"}
+                  {isIncomeEntry(e)
+                    ? "収入"
+                    : (e.daily_spend_categories?.name ?? "用途")}
                   {e.memo ? ` · ${e.memo}` : ""}
+                  {e.scheduled_rule_id ? (
+                    <span className="ml-1 text-[10px] text-muted">取引</span>
+                  ) : null}
+                </p>
+                <p className="truncate text-[11px] text-muted">
+                  {accounts.find((a) => a.id === e.asset_account_id)?.name ?? ""}
                 </p>
               </div>
               <p className="shrink-0 text-right text-sm">
-                <span className="tabular-nums text-expense">
+                <span
+                  className={`tabular-nums ${
+                    isIncomeEntry(e) ? "text-income" : "text-expense"
+                  }`}
+                >
                   {formatYen(e.amount)}
                 </span>
                 {(e.points_amount ?? 0) > 0 ? (
@@ -942,21 +1027,44 @@ function DayPanel({
 function EntryForm({
   date,
   categories,
+  accounts,
   editing,
   onCancel,
 }: {
   date: string;
   categories: DailySpendCategory[];
+  accounts: AssetAccount[];
   editing: DailySpendEntry | null;
   onCancel: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [pending, startTransition] = useTransition();
-  const [categoryId, setCategoryId] = useState(
-    editing?.category_id ?? categories[0]?.id ?? "",
+  const quickCategories = categories.filter(
+    (c) => !isTransportCategory(c.name) && !isFixedCostCategory(c.name),
+  );
+  const transportCategory = categories.find((c) => isTransportCategory(c.name));
+  const initialCategoryId =
+    editing?.category_id ?? quickCategories[0]?.id ?? categories[0]?.id ?? "";
+  const [categoryId, setCategoryId] = useState(initialCategoryId);
+  const categoryName =
+    categories.find((c) => c.id === categoryId)?.name ?? "";
+  const [accountId, setAccountId] = useState(() =>
+    defaultAccountId(accounts, categoryName, editing?.asset_account_id),
   );
   const isEdit = Boolean(editing);
+
+  function pickCategory(id: string) {
+    setCategoryId(id);
+    const name = categories.find((c) => c.id === id)?.name ?? "";
+    setAccountId(
+      defaultAccountId(
+        accounts,
+        name,
+        id === editing?.category_id ? editing?.asset_account_id : null,
+      ),
+    );
+  }
 
   return (
     <form
@@ -972,7 +1080,10 @@ function EntryForm({
             if (isEdit) onCancel();
             else {
               setFormKey((k) => k + 1);
-              setCategoryId(categories[0]?.id ?? "");
+              const nextId = quickCategories[0]?.id ?? "";
+              setCategoryId(nextId);
+              const name = categories.find((c) => c.id === nextId)?.name ?? "";
+              setAccountId(defaultAccountId(accounts, name, null));
             }
           }
         });
@@ -987,13 +1098,13 @@ function EntryForm({
       <div className="grid gap-1">
         <span className="text-sm text-muted">用途</span>
         <div className="flex flex-wrap gap-1.5">
-          {categories.map((c) => {
+          {quickCategories.map((c) => {
             const active = c.id === categoryId;
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setCategoryId(c.id)}
+                onClick={() => pickCategory(c.id)}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
                   active
                     ? "text-white"
@@ -1006,7 +1117,37 @@ function EntryForm({
             );
           })}
         </div>
+        {isFixedCostCategory(categoryName) ? (
+          <p className="text-xs text-muted">用途: 固定費（取引から入った記録）</p>
+        ) : null}
       </div>
+      {transportCategory ? (
+        <div className="grid gap-1">
+          <span className="text-sm text-muted">交通費（支払い元は Suica が初期）</span>
+          <button
+            type="button"
+            onClick={() => pickCategory(transportCategory.id)}
+            className={`w-fit rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+              categoryId === transportCategory.id
+                ? "text-white"
+                : "border border-line bg-white text-muted hover:text-ink"
+            }`}
+            style={
+              categoryId === transportCategory.id
+                ? { backgroundColor: transportCategory.color }
+                : undefined
+            }
+          >
+            交通費
+          </button>
+        </div>
+      ) : null}
+      <PaymentSourceField
+        accounts={accounts}
+        categoryName={categoryName}
+        value={accountId}
+        onChange={setAccountId}
+      />
       <div className="grid grid-cols-2 gap-2">
         <label className="grid min-w-0 gap-1 text-sm">
           <span className="text-muted">金額（円）</span>
@@ -1066,40 +1207,27 @@ function EntryForm({
   );
 }
 
-function BudgetEditor({
-  categories,
+function BudgetPopup({
+  category,
   monthKey,
 }: {
-  categories: DailySpendCategory[];
+  category: DailySpendCategory & { monthly_budget: number };
   monthKey: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [pending, startTransition] = useTransition();
-  const editable = categories.filter(
-    (c) =>
-      !isSharedPoolCategory(c.name) &&
-      !isMiscGroupChild(c.name) &&
-      !isConfidentialCategory(c.name),
-  );
-  const [selected, setSelected] = useState(editable[0]?.id ?? "");
-  const current = editable.find((c) => c.id === selected) ?? editable[0];
-  const legacyMonth = isLegacyPocketMonth(monthKey);
-  const viewingLegacyPocket =
-    legacyMonth && current && isPocketBudgetCategory(current.name);
-
-  if (!current) return null;
-
-  const displayBudget = resolveCategoryBudget(
-    current.name,
+  const legacy =
+    isLegacyPocketMonth(monthKey) && isPocketBudgetCategory(category.name);
+  const shown = resolveCategoryBudget(
+    category.name,
     monthKey,
-    current.monthly_budget,
+    category.monthly_budget,
   );
 
   return (
     <form
-      key={current.id}
-      className="grid gap-2 rounded-xl border border-line/80 bg-surface p-4"
+      className="grid gap-2"
       action={(fd) => {
         startTransition(async () => {
           const res = await updateDailySpendCategory(fd);
@@ -1108,77 +1236,35 @@ function BudgetEditor({
         });
       }}
     >
-      <h3 className="text-sm font-bold">月予算の調整</h3>
-      <p className="text-xs text-muted">
-        本機能は 2026年8月以降の予算です。家族・昼食・雑費・交通費をここで変えられます。
-        「酒」「お菓子」は雑費予算（雑費＋酒＋お菓子の合計）から減ります。
-        「その他」は独自予算なし（家族＋昼食＋雑費の合計枠＝小遣い残りから減算）。
-        2026年7月以前は作成時のおまけ固定（家族3.5万／昼食1.5万／雑費1万）で、編集しても7月表示には反映されません。
-      </p>
-      <input type="hidden" name="id" value={current.id} />
+      <input type="hidden" name="id" value={category.id} />
+      <input type="hidden" name="name" value={category.name} />
+      <input type="hidden" name="color" value={category.color} />
       <label className="grid gap-1 text-sm">
-        <span className="text-muted">用途</span>
-        <select
-          value={current.id}
-          onChange={(e) => setSelected(e.target.value)}
-          className="rounded-md border border-line bg-white px-3 py-2"
-        >
-          {editable.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="text-muted">名前</span>
-        <input
-          name="name"
-          required
-          defaultValue={current.name}
-          className="rounded-md border border-line bg-white px-3 py-2"
-        />
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="text-muted">
-          月予算（円）
-          {viewingLegacyPocket
-            ? ` · いま表示中の7月は固定 ${displayBudget.toLocaleString()} 円`
-            : ""}
-        </span>
+        <span className="text-muted">月予算（円）</span>
         <input
           name="monthly_budget"
           type="number"
           min={0}
           required
-          defaultValue={current.monthly_budget}
+          defaultValue={category.monthly_budget}
           className="rounded-md border border-line bg-white px-3 py-2"
         />
-        {viewingLegacyPocket ? (
-          <span className="text-xs text-muted">
-            上の欄は 8月以降用の保存値です。7月を見ている間はカード上は固定額のままです。
-          </span>
-        ) : null}
       </label>
-      <label className="grid gap-1 text-sm">
-        <span className="text-muted">色</span>
-        <input
-          name="color"
-          type="color"
-          defaultValue={current.color}
-          className="h-10 w-full rounded-md border border-line bg-white px-2"
-        />
-      </label>
+      {legacy ? (
+        <p className="text-xs text-muted">
+          2026年7月の表示は固定の {shown.toLocaleString()} 円のままです。ここは8月以降の予算です。
+        </p>
+      ) : (
+        <p className="text-xs text-muted">この用途の月予算を更新します。</p>
+      )}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md border border-line px-3 py-2 text-sm hover:bg-white disabled:opacity-60"
+        className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
       >
-        {pending ? "保存中…" : "予算を更新"}
+        {pending ? "保存中…" : "保存"}
       </button>
-      {ok && !error ? (
-        <p className="text-sm text-income">保存しました</p>
-      ) : null}
+      {ok && !error ? <p className="text-sm text-income">保存しました</p> : null}
       {error ? <p className="text-sm text-expense">{error}</p> : null}
     </form>
   );

@@ -92,6 +92,7 @@ export function buildDailySpendExportModel(
 
   const spentByCategoryId = new Map<string, number>();
   for (const e of entries) {
+    if (!e.category_id || e.kind === "income") continue;
     spentByCategoryId.set(
       e.category_id,
       (spentByCategoryId.get(e.category_id) ?? 0) + e.amount,

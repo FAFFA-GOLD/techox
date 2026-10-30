@@ -6,10 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { BRAND_NAME } from "@/lib/brand";
 
 const links = [
-  { href: "/dashboard", label: "全体家計" },
   { href: "/calendar", label: "毎日の支出" },
-  { href: "/transactions", label: "明細" },
-  { href: "/forecast", label: "キャッシュフロー" },
   { href: "/settings", label: "設定" },
 ];
 
@@ -28,7 +25,7 @@ export function AppNav() {
     <header className="sticky top-0 z-40 border-b border-line/70 bg-white/70 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3">
         <Link
-          href="/dashboard"
+          href="/calendar"
           className="shrink-0 text-lg font-bold tracking-tight text-accent-deep"
         >
           {BRAND_NAME}

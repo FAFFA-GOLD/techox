@@ -59,6 +59,33 @@ export const DEFAULT_MAIN_BANK_NAME = "あいち銀行";
 /** 追加の既定銀行口座（メインではない） */
 export const DEFAULT_SECOND_BANK_NAME = "三菱東京UFJ銀行";
 
+/** 毎日の支出で残高を持つ既定口座。既存名は上書きしない。 */
+export const DEFAULT_WALLET_ACCOUNTS: {
+  name: string;
+  kind: AssetAccountKind;
+}[] = [
+  { name: "docomo銀行", kind: "bank" },
+  { name: "Olive銀行", kind: "bank" },
+  { name: "PayPay", kind: "emoney" },
+  { name: "R-PAY", kind: "emoney" },
+  { name: "Suica", kind: "emoney" },
+];
+
+/** 交通費以外の支出で選べる支払い元。初期値は先頭。 */
+export const SPEND_SOURCE_NAMES = [
+  "R-PAY",
+  "PayPay",
+  "docomo銀行",
+  "Olive銀行",
+  "Suica",
+] as const;
+
+/** 交通費で選べる支払い元。初期値は先頭。 */
+export const TRANSPORT_SOURCE_NAMES = ["Suica", "PayPay"] as const;
+
+export const DEFAULT_SPEND_SOURCE_NAME = SPEND_SOURCE_NAMES[0];
+export const DEFAULT_TRANSPORT_SOURCE_NAME = TRANSPORT_SOURCE_NAMES[0];
+
 export type AssetAccount = {
   id: string;
   user_id: string;
@@ -231,12 +258,17 @@ export type DailySpendCategory = {
 export type DailySpendEntry = {
   id: string;
   user_id: string;
-  category_id: string;
+  category_id: string | null;
   date: string;
   amount: number;
   /** ポイント決済額。月合計の参考表示のみ（予算・アラート・グラフ対象外） */
   points_amount: number;
   memo: string | null;
+  kind?: "expense" | "income";
+  asset_account_id?: string | null;
+  scheduled_rule_id?: string | null;
+  /** その月だけ手で直した発生行。取引の金額変更では上書きしない */
+  amount_locked?: boolean;
   created_at: string;
   updated_at: string;
   daily_spend_categories?: Pick<
@@ -244,6 +276,31 @@ export type DailySpendEntry = {
     "id" | "name" | "color" | "monthly_budget"
   > | null;
 };
+
+export type ScheduleKind = "recurring" | "card" | "loan";
+
+export type ScheduledRule = {
+  id: string;
+  user_id: string;
+  name: string;
+  schedule_kind: ScheduleKind;
+  flow: TransactionKind;
+  amount: number;
+  day_of_month: number;
+  interval_months: number;
+  start_date: string;
+  end_date: string | null;
+  asset_account_id: string | null;
+  category_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function scheduleKindLabel(kind: ScheduleKind): string {
+  if (kind === "card") return "カード";
+  if (kind === "loan") return "ローン";
+  return "定期";
+}
 
 /** 個別予算を持ち、かつ「小遣い合計」の元になる用途 */
 export const POCKET_BUDGET_NAMES = ["家族", "昼食", "雑費"] as const;
@@ -269,6 +326,8 @@ export const MISC_BUDGET_NAME = "雑費";
 export const LUNCH_CATEGORY_NAME = "昼食";
 export const TRANSPORT_CATEGORY_NAME = "交通費";
 export const CONFIDENTIAL_CATEGORY_NAME = "機密費";
+/** 取引（家賃・カード・ローンなど）。小遣い予算とペースからは外し、日付と総支出には含める */
+export const FIXED_COST_CATEGORY_NAME = "固定費";
 
 /** これ以前（その月を含む）は作成時のおまけ固定予算。以降は DB の月予算（画面で編集可） */
 export const LEGACY_POCKET_THROUGH_MONTH = "2026-07";
@@ -380,6 +439,23 @@ export function isTransportCategory(name: string): boolean {
 
 export function isConfidentialCategory(name: string): boolean {
   return name === CONFIDENTIAL_CATEGORY_NAME;
+}
+
+export function isFixedCostCategory(name: string): boolean {
+  return name === FIXED_COST_CATEGORY_NAME;
+}
+
+export function isIncomeEntry(entry: { kind?: string | null }): boolean {
+  return entry.kind === "income";
+}
+
+/** 交通費以外の手入力で選べる口座名か */
+export function isSpendSourceName(name: string): boolean {
+  return (SPEND_SOURCE_NAMES as readonly string[]).includes(name);
+}
+
+export function isTransportSourceName(name: string): boolean {
+  return (TRANSPORT_SOURCE_NAMES as readonly string[]).includes(name);
 }
 
 /** 月合計・小遣い・グラフ・カレンダー日計から除外する用途 */

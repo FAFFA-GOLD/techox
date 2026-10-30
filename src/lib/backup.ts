@@ -503,6 +503,7 @@ export async function applyLedgerBackupToUser(
 
   if (backup.dailySpendEntries.length) {
     const payload = backup.dailySpendEntries.flatMap((e) => {
+      if (!e.category_id) return [];
       const categoryId = dailyCatIdMap.get(e.category_id);
       if (!categoryId) return [];
       return [
