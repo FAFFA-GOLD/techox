@@ -4,7 +4,16 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { PaydayType, TransactionKind } from "@/lib/types";
+import type { PaydayType, ScheduleKind, ScheduledRule, TransactionKind } from "@/lib/types";
+import {
+  DEFAULT_SPEND_SOURCE_NAME,
+  DEFAULT_TRANSPORT_SOURCE_NAME,
+  isFixedCostCategory,
+  isSpendSourceName,
+  isTransportCategory,
+  isTransportSourceName,
+} from "@/lib/types";
+import { migrationHint, syncScheduledRule } from "@/lib/scheduled-sync";
 
 async function requestOrigin(): Promise<string> {
   const h = await headers();
@@ -64,7 +73,7 @@ export async function signIn(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: error.message };
-  redirect("/dashboard");
+  redirect("/calendar");
 }
 
 export async function signUp(formData: FormData) {
@@ -73,7 +82,7 @@ export async function signUp(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({ email, password });
   if (error) return { error: error.message };
-  redirect("/dashboard");
+  redirect("/calendar");
 }
 
 export async function requestPasswordReset(formData: FormData) {
@@ -107,7 +116,7 @@ export async function updatePassword(formData: FormData) {
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: error.message };
-  redirect("/dashboard");
+  redirect("/calendar");
 }
 
 export async function createCategory(formData: FormData) {
@@ -936,6 +945,47 @@ export async function deleteLoanPayment(formData: FormData) {
   revalidateMoney();
 }
 
+async function resolveEntryAccount(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  categoryName: string,
+  requestedId: string | null,
+): Promise<{ id: string | null; error?: string }> {
+  const { data } = await supabase
+    .from("asset_accounts")
+    .select("id, name")
+    .eq("archived", false);
+  const list = (data ?? []) as { id: string; name: string }[];
+  const byId = new Map(list.map((a) => [a.id, a.name]));
+  const byName = new Map(list.map((a) => [a.name, a.id]));
+
+  if (isTransportCategory(categoryName)) {
+    const name = requestedId ? byId.get(requestedId) : undefined;
+    const id =
+      name && isTransportSourceName(name)
+        ? requestedId
+        : (byName.get(DEFAULT_TRANSPORT_SOURCE_NAME) ?? null);
+    if (!id) return { id: null, error: "Suica か PayPay の口座を用意してください" };
+    return { id };
+  }
+
+  if (isFixedCostCategory(categoryName)) {
+    if (requestedId && byId.has(requestedId)) return { id: requestedId };
+    return {
+      id: byName.get(DEFAULT_SPEND_SOURCE_NAME) ?? list[0]?.id ?? null,
+    };
+  }
+
+  const name = requestedId ? byId.get(requestedId) : undefined;
+  const id =
+    name && isSpendSourceName(name)
+      ? requestedId
+      : (byName.get(DEFAULT_SPEND_SOURCE_NAME) ?? null);
+  if (!id) {
+    return { id: null, error: "支払い元の口座がありません" };
+  }
+  return { id };
+}
+
 export async function createDailySpendEntry(formData: FormData) {
   const { supabase, user } = await requireUser();
   const date = String(formData.get("date") ?? "");
@@ -951,6 +1001,18 @@ export async function createDailySpendEntry(formData: FormData) {
     return { error: "金額かポイント決済のどちらかを入力してください" };
   }
 
+  const { data: category } = await supabase
+    .from("daily_spend_categories")
+    .select("name")
+    .eq("id", category_id)
+    .maybeSingle();
+  const account = await resolveEntryAccount(
+    supabase,
+    category?.name ?? "",
+    parseAssetAccountId(formData.get("asset_account_id")),
+  );
+  if (account.error) return { error: account.error };
+
   const { error } = await supabase.from("daily_spend_entries").insert({
     user_id: user.id,
     date,
@@ -958,8 +1020,10 @@ export async function createDailySpendEntry(formData: FormData) {
     points_amount,
     category_id,
     memo,
+    kind: "expense",
+    asset_account_id: account.id,
   });
-  if (error) return { error: error.message };
+  if (error) return { error: migrationHint(error.message) ?? error.message };
   revalidateMoney();
   return { ok: true };
 }
@@ -980,18 +1044,59 @@ export async function updateDailySpendEntry(formData: FormData) {
     return { error: "金額かポイント決済のどちらかを入力してください" };
   }
 
+  const { data: category } = await supabase
+    .from("daily_spend_categories")
+    .select("name")
+    .eq("id", category_id)
+    .maybeSingle();
+  const account = await resolveEntryAccount(
+    supabase,
+    category?.name ?? "",
+    parseAssetAccountId(formData.get("asset_account_id")),
+  );
+  if (account.error) return { error: account.error };
+
+  const { data: current } = await supabase
+    .from("daily_spend_entries")
+    .select("scheduled_rule_id")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("daily_spend_entries")
-    .update({ date, amount, points_amount, category_id, memo })
+    .update({
+      date,
+      amount,
+      points_amount,
+      category_id,
+      memo,
+      asset_account_id: account.id,
+      amount_locked: Boolean(current?.scheduled_rule_id),
+    })
     .eq("id", id);
-  if (error) return { error: error.message };
+  if (error) return { error: migrationHint(error.message) ?? error.message };
   revalidateMoney();
   return { ok: true };
 }
 
 export async function deleteDailySpendEntry(formData: FormData) {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
   const id = String(formData.get("id") ?? "");
+  const { data: row } = await supabase
+    .from("daily_spend_entries")
+    .select("scheduled_rule_id, date")
+    .eq("id", id)
+    .maybeSingle();
+  if (row?.scheduled_rule_id && row.date) {
+    await supabase.from("scheduled_rule_skips").upsert(
+      {
+        user_id: user.id,
+        scheduled_rule_id: row.scheduled_rule_id,
+        date: row.date,
+      },
+      { onConflict: "scheduled_rule_id,date" },
+    );
+  }
   await supabase.from("daily_spend_entries").delete().eq("id", id);
   revalidateMoney();
 }
@@ -1670,4 +1775,84 @@ export async function importPayslipPdf(input: {
       error: e instanceof Error ? e.message : "取込に失敗しました",
     };
   }
+}
+
+function parseScheduleKind(raw: FormDataEntryValue | null): ScheduleKind {
+  const value = String(raw ?? "");
+  if (value === "card" || value === "loan") return value;
+  return "recurring";
+}
+
+export async function saveScheduledRule(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const id = String(formData.get("id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const schedule_kind = parseScheduleKind(formData.get("schedule_kind"));
+  const flow = String(formData.get("flow") ?? "") === "income" ? "income" : "expense";
+  const amount = parseAmount(formData.get("amount"));
+  const day_of_month = clampDay(Number(formData.get("day_of_month")));
+  const intervalRaw = Number(formData.get("interval_months") ?? 1);
+  const interval_months = Number.isFinite(intervalRaw)
+    ? Math.min(24, Math.max(1, Math.round(intervalRaw)))
+    : 1;
+  const start_date = String(formData.get("start_date") ?? "");
+  const endRaw = String(formData.get("end_date") ?? "").trim();
+  const end_date = endRaw || null;
+  const asset_account_id = parseAssetAccountId(formData.get("asset_account_id"));
+  const categoryRaw = String(formData.get("category_id") ?? "").trim();
+  const category_id = flow === "income" ? null : categoryRaw || null;
+
+  if (!name || amount == null || !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) {
+    return { error: "名前・金額・開始日を入力してください" };
+  }
+  if (flow === "expense" && !category_id) {
+    return { error: "支出の用途を選んでください" };
+  }
+  if (end_date && end_date < start_date) {
+    return { error: "終了日は開始日以降にしてください" };
+  }
+
+  const payload = {
+    user_id: user.id,
+    name,
+    schedule_kind,
+    flow,
+    amount,
+    day_of_month,
+    interval_months,
+    start_date,
+    end_date,
+    asset_account_id,
+    category_id,
+  };
+
+  const query = id
+    ? supabase.from("scheduled_rules").update(payload).eq("id", id).select("*").single()
+    : supabase.from("scheduled_rules").insert(payload).select("*").single();
+  const { data, error } = await query;
+  if (error || !data) {
+    return { error: migrationHint(error?.message ?? "") ?? error?.message ?? "保存に失敗しました" };
+  }
+  const synced = await syncScheduledRule(supabase, user.id, data as ScheduledRule);
+  if (synced.error) return { error: migrationHint(synced.error) ?? synced.error };
+  revalidateMoney();
+  return { ok: true as const };
+}
+
+export async function deleteScheduledRule(formData: FormData) {
+  const { supabase } = await requireUser();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "削除対象がありません" };
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  await supabase
+    .from("daily_spend_entries")
+    .delete()
+    .eq("scheduled_rule_id", id)
+    .eq("amount_locked", false)
+    .gte("date", todayKey);
+  const { error } = await supabase.from("scheduled_rules").delete().eq("id", id);
+  if (error) return { error: migrationHint(error.message) ?? error.message };
+  revalidateMoney();
+  return { ok: true as const };
 }

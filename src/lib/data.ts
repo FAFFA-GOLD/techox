@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { migrationHint, ensureSchedulesMigrated } from "@/lib/scheduled-sync";
 import { computeTotalAssetsBase, defaultSettings } from "@/lib/money";
 import type {
   AccountBalanceSnapshot,
@@ -23,7 +24,7 @@ import type {
   Transaction,
   UserSettings,
 } from "@/lib/types";
-import { TRANSPORT_CATEGORY_NAME, DEFAULT_MAIN_BANK_NAME, DEFAULT_SECOND_BANK_NAME } from "@/lib/types";
+import { TRANSPORT_CATEGORY_NAME, DEFAULT_MAIN_BANK_NAME, DEFAULT_SECOND_BANK_NAME, DEFAULT_WALLET_ACCOUNTS } from "@/lib/types";
 
 export async function fetchCategories(): Promise<Category[]> {
   const supabase = await createClient();
@@ -156,12 +157,74 @@ export async function ensureDefaultSecondaryBanks(): Promise<void> {
   });
 }
 
+/** docomo / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
+export async function ensureWalletAccounts(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: existing } = await supabase
+    .from("asset_accounts")
+    .select("id, name, sort_order")
+    .eq("user_id", user.id);
+  const rows = existing ?? [];
+  const names = new Set(rows.map((r) => r.name as string));
+  let sort = rows.reduce((m, r) => Math.max(m, r.sort_order as number), 0);
+
+  for (const wallet of DEFAULT_WALLET_ACCOUNTS) {
+    if (names.has(wallet.name)) continue;
+    sort += 1;
+    const { data: created } = await supabase
+      .from("asset_accounts")
+      .insert({
+        user_id: user.id,
+        name: wallet.name,
+        kind: wallet.kind,
+        is_main: false,
+        sort_order: sort,
+      })
+      .select("id, name")
+      .single();
+    if (created) {
+      names.add(wallet.name);
+      rows.push({ id: created.id, name: created.name, sort_order: sort });
+    }
+  }
+
+  const suica = rows.find((r) => r.name === "Suica");
+  if (!suica) return;
+  const { count } = await supabase
+    .from("account_balance_snapshots")
+    .select("id", { count: "exact", head: true })
+    .eq("asset_account_id", suica.id);
+  if (count && count > 0) return;
+
+  const { data: latest } = await supabase
+    .from("suica_balance_snapshots")
+    .select("as_of_date, balance, note")
+    .eq("user_id", user.id)
+    .order("as_of_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!latest) return;
+  await supabase.from("account_balance_snapshots").insert({
+    user_id: user.id,
+    asset_account_id: suica.id,
+    as_of_date: latest.as_of_date,
+    balance: latest.balance,
+    note: latest.note ?? "Suica残高から移行",
+  });
+}
+
 export async function fetchAssetAccounts(
   includeArchived = false,
 ): Promise<AssetAccount[]> {
   const supabase = await createClient();
   await ensureMainAssetAccount();
   await ensureDefaultSecondaryBanks();
+  await ensureWalletAccounts();
   let q = supabase
     .from("asset_accounts")
     .select("*")
@@ -344,6 +407,7 @@ const DEFAULT_DAILY_CATEGORIES = [
   },
   { name: "交通費", monthly_budget: 18860, color: "#4d7c0f", sort_order: 7 },
   { name: "機密費", monthly_budget: 0, color: "#57534e", sort_order: 8 },
+  { name: "固定費", monthly_budget: 0, color: "#44403c", sort_order: 9 },
 ] as const;
 
 /** 旧スケジュール値 → 本機能の初期予算（まだ旧値のときだけ。手動変更は上書きしない） */
@@ -508,6 +572,58 @@ export async function ensureDailySpendCategories(): Promise<DailySpendCategory[]
     supabase,
     (refreshed as DailySpendCategory[]) ?? [],
   );
+}
+
+export async function fetchBalanceMovementsSince(
+  sinceExclusive: string,
+): Promise<
+  {
+    date: string;
+    amount: number;
+    kind: string;
+    asset_account_id: string | null;
+  }[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("daily_spend_entries")
+    .select("date, amount, kind, asset_account_id")
+    .gt("date", sinceExclusive)
+    .not("asset_account_id", "is", null);
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function prepareDailySpendSchedules(
+  categories: DailySpendCategory[],
+  accounts: AssetAccount[],
+): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const res = await ensureSchedulesMigrated(
+    supabase,
+    user.id,
+    categories,
+    accounts,
+  );
+  if (!res.error) return null;
+  return migrationHint(res.error) ?? res.error;
+}
+
+export async function fetchScheduledRules(): Promise<
+  import("@/lib/types").ScheduledRule[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("scheduled_rules")
+    .select("*")
+    .order("day_of_month")
+    .order("name");
+  if (error) return [];
+  return (data ?? []) as import("@/lib/types").ScheduledRule[];
 }
 
 export async function fetchDailySpendEntriesInRange(

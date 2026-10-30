@@ -56,6 +56,7 @@
    - [`supabase/migrations/017_suica_balance_snapshots.sql`](supabase/migrations/017_suica_balance_snapshots.sql)
    - [`supabase/migrations/018_rename_main_bank_aichi.sql`](supabase/migrations/018_rename_main_bank_aichi.sql)
    - [`supabase/migrations/019_add_mufg_bank.sql`](supabase/migrations/019_add_mufg_bank.sql)
+   - [`supabase/migrations/020_scheduled_rules.sql`](supabase/migrations/020_scheduled_rules.sql)
 3. Authentication → Providers で Email を有効化
 4. Authentication → URL Configuration でローカル用を追加
    - Site URL: `http://localhost:3000`

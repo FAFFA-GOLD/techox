@@ -10,7 +10,11 @@ import {
   updateDailySpendEntry,
 } from "@/app/actions";
 import { formatYen } from "@/lib/money";
-import type { DailySpendCategory, DailySpendEntry } from "@/lib/types";
+import type { AssetAccount, DailySpendCategory, DailySpendEntry } from "@/lib/types";
+import {
+  defaultAccountId,
+  PaymentSourceField,
+} from "@/components/payment-source-field";
 import { resolveCategoryBudget } from "@/lib/types";
 
 type Props = {
@@ -18,6 +22,7 @@ type Props = {
   categories: DailySpendCategory[];
   entries: DailySpendEntry[];
   categoryId: string;
+  accounts: AssetAccount[];
 };
 
 export function DailySpendCategoryList({
@@ -25,6 +30,7 @@ export function DailySpendCategoryList({
   categories,
   entries,
   categoryId,
+  accounts,
 }: Props) {
   const activeCategory =
     categories.find((c) => c.id === categoryId) ?? categories[0];
@@ -193,6 +199,7 @@ export function DailySpendCategoryList({
                 {editing?.id === e.id ? (
                   <ListEntryForm
                     categories={categories}
+                    accounts={accounts}
                     editing={e}
                     onCancel={() => setEditing(null)}
                     onSaved={() => setEditing(null)}
@@ -258,6 +265,7 @@ export function DailySpendCategoryList({
         <div className="mt-4 border-t border-line/60 pt-4">
           <ListEntryForm
             categories={categories}
+            accounts={accounts}
             defaultCategoryId={activeCategory.id}
             defaultDate={`${monthKey}-01`}
             onSaved={() => {}}
@@ -361,6 +369,7 @@ function BulkMoveForm({
 
 function ListEntryForm({
   categories,
+  accounts,
   editing,
   defaultCategoryId,
   defaultDate,
@@ -368,6 +377,7 @@ function ListEntryForm({
   onSaved,
 }: {
   categories: DailySpendCategory[];
+  accounts: AssetAccount[];
   editing?: DailySpendEntry;
   defaultCategoryId?: string;
   defaultDate?: string;
@@ -380,7 +390,23 @@ function ListEntryForm({
   const [categoryId, setCategoryId] = useState(
     editing?.category_id ?? defaultCategoryId ?? categories[0]?.id ?? "",
   );
+  const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "";
+  const [accountId, setAccountId] = useState(() =>
+    defaultAccountId(accounts, categoryName, editing?.asset_account_id),
+  );
   const isEdit = Boolean(editing);
+
+  function pickCategory(id: string) {
+    setCategoryId(id);
+    const name = categories.find((c) => c.id === id)?.name ?? "";
+    setAccountId(
+      defaultAccountId(
+        accounts,
+        name,
+        id === editing?.category_id ? editing?.asset_account_id : null,
+      ),
+    );
+  }
 
   return (
     <form
@@ -427,7 +453,7 @@ function ListEntryForm({
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setCategoryId(c.id)}
+                onClick={() => pickCategory(c.id)}
                 className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
                   active
                     ? "text-white"
@@ -441,6 +467,12 @@ function ListEntryForm({
           })}
         </div>
       </div>
+      <PaymentSourceField
+        accounts={accounts}
+        categoryName={categoryName}
+        value={accountId}
+        onChange={setAccountId}
+      />
       <div className="grid grid-cols-2 gap-2">
         <label className="grid min-w-0 gap-1 text-sm">
           <span className="text-muted">金額（円）</span>

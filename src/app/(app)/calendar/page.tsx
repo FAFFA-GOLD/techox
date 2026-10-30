@@ -1,16 +1,21 @@
-import { format } from "date-fns";
 import { CalendarClient } from "@/components/calendar-client";
+import { buildAccountBalanceViews } from "@/lib/account-display";
 import {
   defaultSelectedDateForMonth,
   monthKeyInTimeZone,
+  todayKeyInTimeZone,
 } from "@/lib/dates";
 import {
   ensureDailySpendCategories,
+  fetchAccountBalanceSnapshots,
+  fetchAssetAccounts,
+  fetchBalanceMovementsSince,
   fetchDailyScratchpad,
   fetchDailySpendEntriesInRange,
   fetchDailySpendHolidaysInRange,
   fetchDailySpendMakikoOffsInRange,
-  fetchSuicaDisplayBalance,
+  fetchScheduledRules,
+  prepareDailySpendSchedules,
 } from "@/lib/data";
 
 type Props = {
@@ -39,14 +44,35 @@ export default async function CalendarPage({ searchParams }: Props) {
   const lastDay = new Date(y, m, 0).getDate();
   const end = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
 
-  const [categories, entries, holidays, makikoOffs, scratchpad, suica] =
+  const [categories, accounts] = await Promise.all([
+    ensureDailySpendCategories(),
+    fetchAssetAccounts(),
+  ]);
+  const scheduleError = await prepareDailySpendSchedules(categories, accounts);
+
+  const snapshots = await fetchAccountBalanceSnapshots();
+  const today = todayKeyInTimeZone();
+  const asOfDates = accounts
+    .map((account) => {
+      const dated = snapshots
+        .filter(
+          (snap) =>
+            snap.asset_account_id === account.id && snap.as_of_date <= today,
+        )
+        .map((snap) => snap.as_of_date);
+      return dated.sort().at(-1) ?? null;
+    })
+    .filter((date): date is string => Boolean(date));
+  const earliest = asOfDates.sort()[0];
+
+  const [entries, holidays, makikoOffs, scratchpad, rules, movements] =
     await Promise.all([
-      ensureDailySpendCategories(),
       fetchDailySpendEntriesInRange(start, end),
       fetchDailySpendHolidaysInRange(start, end),
       fetchDailySpendMakikoOffsInRange(start, end),
       fetchDailyScratchpad(monthKey),
-      fetchSuicaDisplayBalance(),
+      fetchScheduledRules(),
+      earliest ? fetchBalanceMovementsSince(earliest) : Promise.resolve([]),
     ]);
 
   let compareEntries = entries;
@@ -58,6 +84,13 @@ export default async function CalendarPage({ searchParams }: Props) {
     compareEntries = await fetchDailySpendEntriesInRange(compareStart, compareEnd);
   }
 
+  const balances = buildAccountBalanceViews(
+    accounts,
+    snapshots,
+    movements,
+    today,
+  );
+
   const listCategoryId =
     params.category && categories.some((c) => c.id === params.category)
       ? params.category
@@ -66,7 +99,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   return (
     <div className="grid gap-4">
       <p className="rounded-xl border border-line/80 bg-white/60 px-4 py-3 text-sm text-muted">
-        用途（家族・昼食・雑費・酒・お菓子・その他・交通費）ごとに記録します。「用途別一覧」でカテゴリごとにまとめて確認・編集できます。雑費予算は雑費＋酒＋お菓子の合計で消化します。「その他」は家族＋昼食＋雑費の合計枠（小遣い残り）から減ります。
+        毎日の支出が家計の本体です。銀行と電子マネーの残高、この月の総収入・総支出、用途別の小遣いをここで見ます。交通費は支払い元を Suica か PayPay から選びます。それ以外の支出の初期は R-PAY です。毎月の引き落としは下の「取引」に登録すると、該当日へ自動で入ります。
       </p>
       <CalendarClient
         monthKey={monthKey}
@@ -80,7 +113,10 @@ export default async function CalendarPage({ searchParams }: Props) {
         view={view}
         listCategoryId={listCategoryId}
         scratchpadBody={scratchpad?.body ?? ""}
-        suica={suica}
+        accounts={accounts}
+        balances={balances}
+        rules={rules}
+        scheduleError={scheduleError}
       />
     </div>
   );

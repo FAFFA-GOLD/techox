@@ -26,6 +26,7 @@ import {
   isSharedPoolCategory,
   isConfidentialCategory,
   isExcludedFromMonthTotalCategory,
+  isFixedCostCategory,
   isTransportCategory,
   MISC_BUDGET_NAME,
   resolveCategoryBudget,
@@ -100,6 +101,7 @@ export function DailySpendCharts({
         color: c.color,
         transport: isTransportCategory(c.name),
         confidential: isConfidentialCategory(c.name),
+        fixed: isFixedCostCategory(c.name),
         miscChild: isMiscGroupChild(c.name),
       };
     });
@@ -108,7 +110,7 @@ export function DailySpendCharts({
   const pieData = useMemo(
     () =>
       categoryBars.filter(
-        (c) => c.spent > 0 && !c.transport && !c.confidential,
+        (c) => c.spent > 0 && !c.transport && !c.confidential && !c.fixed,
       ),
     [categoryBars],
   );
@@ -122,7 +124,7 @@ export function DailySpendCharts({
 
     const rows: Array<Record<string, string | number>> = [];
     for (const c of categoryBars) {
-      if (c.transport || c.confidential || c.miscChild) continue;
+      if (c.transport || c.confidential || c.fixed || c.miscChild) continue;
       if (c.budget <= 0 && c.spentVsBudget <= 0 && c.spent <= 0) continue;
 
       if (c.name === MISC_BUDGET_NAME) {
@@ -180,13 +182,17 @@ export function DailySpendCharts({
     const byDateTotal = new Map<string, number>();
     const excludedIds = new Set(
       categories
-        .filter((c) => isExcludedFromMonthTotalCategory(c.name))
+        .filter(
+          (c) =>
+            isExcludedFromMonthTotalCategory(c.name) ||
+            isFixedCostCategory(c.name),
+        )
         .map((c) => c.id),
     );
     const chartCategories = categories.filter((c) => !excludedIds.has(c.id));
     const spentByCategory = new Map<string, number>();
     for (const e of entries) {
-      if (excludedIds.has(e.category_id)) continue;
+      if (!e.category_id || e.kind === "income" || excludedIds.has(e.category_id)) continue;
       spentByCategory.set(
         e.category_id,
         (spentByCategory.get(e.category_id) ?? 0) + e.amount,
@@ -209,7 +215,7 @@ export function DailySpendCharts({
     const categoryById = new Map(categories.map((c) => [c.id, c]));
 
     for (const e of entries) {
-      if (excludedIds.has(e.category_id)) continue;
+      if (!e.category_id || e.kind === "income" || excludedIds.has(e.category_id)) continue;
       byDateTotal.set(e.date, (byDateTotal.get(e.date) ?? 0) + e.amount);
     }
 
@@ -226,7 +232,7 @@ export function DailySpendCharts({
         row[c.id] = 0;
       }
       for (const e of entries) {
-        if (e.date !== key || excludedIds.has(e.category_id)) continue;
+        if (e.date !== key || !e.category_id || e.kind === "income" || excludedIds.has(e.category_id)) continue;
         row[e.category_id] = Number(row[e.category_id] ?? 0) + e.amount;
       }
 
