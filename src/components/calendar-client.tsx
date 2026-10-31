@@ -626,7 +626,7 @@ export function CalendarClient({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
           {categoryStats
             .filter(
               (c) =>
@@ -635,7 +635,7 @@ export function CalendarClient({
             .map((c) => (
             <div
               key={c.id}
-              className="rounded-xl border border-line/80 bg-surface p-4"
+              className="rounded-xl border border-line/80 bg-surface p-2.5 sm:p-4"
             >
               <div className="flex items-center gap-2">
                 <span
@@ -658,16 +658,16 @@ export function CalendarClient({
               </div>
               {c.shared ? (
                 <>
-                  <p className="mt-2 text-2xl font-bold tabular-nums text-expense">
+                  <p className="mt-1 text-lg font-bold tabular-nums text-expense sm:mt-2 sm:text-2xl">
                     {formatYen(c.spent)}
                   </p>
-                  <p className="mt-1 text-xs text-muted">
+                  <p className="mt-1 text-[11px] text-muted sm:text-xs">
                     家族＋昼食＋雑費の合計枠から減算（独自予算なし）
                   </p>
                 </>
               ) : c.miscChild ? (
                 <>
-                  <p className="mt-2 text-2xl font-bold tabular-nums text-expense">
+                  <p className="mt-1 text-lg font-bold tabular-nums text-expense sm:mt-2 sm:text-2xl">
                     {formatYen(c.spent)}
                   </p>
                   <p className="mt-1 text-xs text-muted">
@@ -677,7 +677,7 @@ export function CalendarClient({
               ) : (
                 <>
                   <p
-                    className={`mt-2 text-2xl font-bold tabular-nums ${
+                    className={`mt-1 text-lg font-bold tabular-nums sm:mt-2 sm:text-2xl ${
                       c.remaining < 0 ? "text-expense" : "text-income"
                     }`}
                   >
@@ -1032,81 +1032,67 @@ function DayPanel({
         </p>
       </div>
 
-      <form
-        className="flex flex-wrap items-center gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-2"
-        action={(fd) => {
-          startHoliday(async () => {
-            const res = await setDailySpendHoliday(fd);
-            setHolidayError(res?.error ?? null);
-          });
-        }}
-      >
-        <input type="hidden" name="date" value={date} />
-        <input type="hidden" name="enabled" value={isHoliday ? "0" : "1"} />
-        <p className="flex-1 text-xs text-muted">
-          会社都合で平日が休みのとき「休日」にすると、昼食の一日上限の残り平日数から除外されます。
-        </p>
-        <button
-          type="submit"
-          disabled={holidayPending}
-          className={`rounded-md px-3 py-1.5 text-xs ${
-            isHoliday
-              ? "border border-line text-muted hover:bg-white"
-              : "bg-accent text-white hover:bg-accent-deep"
-          } disabled:opacity-60`}
+      <div className="flex flex-wrap gap-2">
+        <form
+          action={(fd) => {
+            startHoliday(async () => {
+              const res = await setDailySpendHoliday(fd);
+              setHolidayError(res?.error ?? null);
+            });
+          }}
         >
-          {holidayPending
-            ? "更新中…"
-            : isHoliday
-              ? "休日を解除"
-              : "この日を休日にする"}
-        </button>
-        {holidayError ? (
-          <p className="w-full text-xs text-expense">{holidayError}</p>
-        ) : null}
-      </form>
-
-      <form
-        className="flex flex-wrap items-center gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-2"
-        action={(fd) => {
-          startMakiko(async () => {
-            const res = await setDailySpendMakikoOff(fd);
-            setMakikoError(res?.error ?? null);
-          });
-        }}
-      >
-        <input type="hidden" name="date" value={date} />
-        <input type="hidden" name="enabled" value={isMakikoOff ? "0" : "1"} />
-        <p className="flex-1 text-xs text-muted">
-          マキコ休みの日に「マ」を付けます（カレンダー表示用。昼食の平日数には影響しません）。
-        </p>
-        <button
-          type="submit"
-          disabled={makikoPending}
-          className={`rounded-md px-3 py-1.5 text-xs ${
-            isMakikoOff
-              ? "border border-line text-muted hover:bg-white"
-              : "bg-accent text-white hover:bg-accent-deep"
-          } disabled:opacity-60`}
+          <input type="hidden" name="date" value={date} />
+          <input type="hidden" name="enabled" value={isHoliday ? "0" : "1"} />
+          <button
+            type="submit"
+            disabled={holidayPending}
+            className={`rounded-md px-3 py-1.5 text-xs ${
+              isHoliday
+                ? "border border-line text-muted hover:bg-white"
+                : "bg-accent text-white hover:bg-accent-deep"
+            } disabled:opacity-60`}
+          >
+            {holidayPending
+              ? "更新中…"
+              : isHoliday
+                ? "休日を解除"
+                : "この日を休日にする"}
+          </button>
+        </form>
+        <form
+          action={(fd) => {
+            startMakiko(async () => {
+              const res = await setDailySpendMakikoOff(fd);
+              setMakikoError(res?.error ?? null);
+            });
+          }}
         >
-          {makikoPending
-            ? "更新中…"
-            : isMakikoOff
-              ? "マキコ休みを解除"
-              : "マキコ休みにする"}
-        </button>
-        {makikoError ? (
-          <p className="w-full text-xs text-expense">{makikoError}</p>
-        ) : null}
-      </form>
+          <input type="hidden" name="date" value={date} />
+          <input type="hidden" name="enabled" value={isMakikoOff ? "0" : "1"} />
+          <button
+            type="submit"
+            disabled={makikoPending}
+            className={`rounded-md px-3 py-1.5 text-xs ${
+              isMakikoOff
+                ? "border border-line text-muted hover:bg-white"
+                : "bg-accent text-white hover:bg-accent-deep"
+            } disabled:opacity-60`}
+          >
+            {makikoPending
+              ? "更新中…"
+              : isMakikoOff
+                ? "マキコ休みを解除"
+                : "マキコ休みにする"}
+          </button>
+        </form>
+      </div>
+      {holidayError ? <p className="text-xs text-expense">{holidayError}</p> : null}
+      {makikoError ? <p className="text-xs text-expense">{makikoError}</p> : null}
 
       <div className="grid gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h3 className="text-sm font-bold">日々の収支</h3>
-            <p className="mt-0.5 text-[11px] text-muted">
-              日付の金額と予算に入る、その日の支出です。
-            </p>
           </div>
           <EditPopover
             buttonLabel="用途別"
@@ -1144,9 +1130,6 @@ function DayPanel({
       <div className="grid gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-3">
         <div>
           <h3 className="text-sm font-bold">取引</h3>
-          <p className="mt-0.5 text-[11px] text-muted">
-            取引で登録した、この日の入出金です。
-          </p>
         </div>
         {editing?.scheduled_rule_id ? (
           <EntryForm

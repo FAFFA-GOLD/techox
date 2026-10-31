@@ -25,21 +25,30 @@ export function AppNav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 bg-white/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-1.5 px-2 py-2 sm:gap-2 sm:px-3 sm:py-3">
-        <Link
-          href="/calendar"
-          className="shrink-0 text-base font-bold tracking-tight text-accent-deep sm:text-lg"
-        >
-          {BRAND_NAME}
-        </Link>
-        <nav className="flex flex-1 items-center justify-end gap-0.5 overflow-x-auto sm:justify-center">
+      <div className="mx-auto grid max-w-6xl gap-1.5 px-2 py-2 sm:px-3 sm:py-3">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            href="/calendar"
+            className="text-base font-bold tracking-tight text-accent-deep sm:text-lg"
+          >
+            {BRAND_NAME}
+          </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            className="rounded-md border border-line px-2.5 py-1.5 text-xs text-muted hover:bg-white sm:text-sm"
+          >
+            退出
+          </button>
+        </div>
+        <nav className="flex flex-wrap gap-1">
           {links.map((link) => {
             const active = pathname.startsWith(link.href);
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`whitespace-nowrap rounded-md px-2 py-1.5 text-xs transition sm:text-sm ${
+                className={`rounded-md px-2.5 py-1.5 text-xs transition sm:text-sm ${
                   active
                     ? "bg-accent text-white"
                     : "text-muted hover:bg-white hover:text-ink"
@@ -50,13 +59,6 @@ export function AppNav() {
             );
           })}
         </nav>
-        <button
-          type="button"
-          onClick={signOut}
-          className="shrink-0 rounded-md border border-line px-2.5 py-1.5 text-xs text-muted hover:bg-white sm:text-sm"
-        >
-          退出
-        </button>
       </div>
     </header>
   );
