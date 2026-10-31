@@ -1080,6 +1080,30 @@ export async function updateDailySpendEntry(formData: FormData) {
   return { ok: true };
 }
 
+export async function updateScheduledOccurrenceAmount(formData: FormData) {
+  const { supabase } = await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const amount = parseAmount(formData.get("amount"));
+  if (!id || amount == null) return { error: "金額を入力してください" };
+
+  const { data: current } = await supabase
+    .from("daily_spend_entries")
+    .select("id, scheduled_rule_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!current?.scheduled_rule_id) {
+    return { error: "この行は取引の発生ではありません" };
+  }
+
+  const { error } = await supabase
+    .from("daily_spend_entries")
+    .update({ amount, amount_locked: true })
+    .eq("id", id);
+  if (error) return { error: migrationHint(error.message) ?? error.message };
+  revalidateMoney();
+  return { ok: true as const };
+}
+
 export async function deleteDailySpendEntry(formData: FormData) {
   const { supabase, user } = await requireUser();
   const id = String(formData.get("id") ?? "");

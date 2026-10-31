@@ -3,7 +3,12 @@
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { deleteDailySpendEntry, deleteScheduledRule, saveScheduledRule } from "@/app/actions";
+import {
+  deleteDailySpendEntry,
+  deleteScheduledRule,
+  saveScheduledRule,
+  updateScheduledOccurrenceAmount,
+} from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
 import { todayKeyInTimeZone } from "@/lib/dates";
 import { formatYen } from "@/lib/money";
@@ -59,7 +64,7 @@ export function ScheduledRulesPanel({
         <div>
           <h2 className="text-lg font-bold">取引</h2>
           <p className="mt-1 text-xs text-muted">
-            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとで、すべてと種別（定期・カード・ローン）で絞れます。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
+            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとで、すべてと種別（定期・カード・ローン）で絞れます。近い月の金額がわかったときは、その日の行だけ直せます。先の月は登録したおおよその金額のままです。
           </p>
         </div>
         <EditPopover buttonLabel="取引を追加" title="取引を追加">
@@ -208,6 +213,9 @@ function OccurrenceBrowser({
               (item) => item.id === (row.asset_account_id ?? rule?.asset_account_id),
             );
             const income = (row.kind ?? rule?.flow) === "income";
+            const adjusted =
+              Boolean(row.amount_locked) ||
+              (rule != null && Number(row.amount) !== Number(rule.amount));
             return (
               <li key={row.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -223,6 +231,9 @@ function OccurrenceBrowser({
                     <span className="ml-1 font-medium text-ink">
                       {occurrenceMark(row.date)}
                     </span>
+                    {adjusted ? (
+                      <span className="ml-2 text-accent">この月だけ変更</span>
+                    ) : null}
                     {duplicateKeys.has(duplicateKey(row, rule)) ? (
                       <span className="ml-2 text-expense">同じ日に重複</span>
                     ) : null}
@@ -235,6 +246,14 @@ function OccurrenceBrowser({
                 >
                   {formatYen(row.amount)}
                 </p>
+                <EditPopover buttonLabel="この分を編集" title="この月の金額">
+                  <OccurrenceAmountForm
+                    entryId={row.id}
+                    amount={row.amount}
+                    ruleAmount={rule?.amount ?? null}
+                    label={occurrenceMark(row.date)}
+                  />
+                </EditPopover>
                 <form action={deleteDailySpendEntry}>
                   <input type="hidden" name="id" value={row.id} />
                   <button
@@ -270,6 +289,58 @@ function OccurrenceBrowser({
       </p>
       {list}
     </div>
+  );
+}
+
+function OccurrenceAmountForm({
+  entryId,
+  amount,
+  ruleAmount,
+  label,
+}: {
+  entryId: string;
+  amount: number;
+  ruleAmount: number | null;
+  label: string;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  return (
+    <form
+      className="grid gap-2"
+      action={(fd) => {
+        startTransition(async () => {
+          const res = await updateScheduledOccurrenceAmount(fd);
+          setError(res && "error" in res ? res.error ?? null : null);
+        });
+      }}
+    >
+      <input type="hidden" name="id" value={entryId} />
+      <p className="text-xs text-muted">
+        {label} だけ金額を変えます。毎月の登録
+        {ruleAmount != null ? `（${formatYen(ruleAmount)}）` : ""}
+        と、まだ金額が決まっていない先の月はそのままです。
+      </p>
+      <label className="grid gap-1 text-sm">
+        <span className="text-muted">この月の金額（円）</span>
+        <input
+          name="amount"
+          type="number"
+          min={1}
+          required
+          defaultValue={amount}
+          className="rounded-md border border-line bg-white px-3 py-2"
+        />
+      </label>
+      {error ? <p className="text-sm text-expense">{error}</p> : null}
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
+      >
+        {pending ? "保存しています…" : "この月だけ保存"}
+      </button>
+    </form>
   );
 }
 
