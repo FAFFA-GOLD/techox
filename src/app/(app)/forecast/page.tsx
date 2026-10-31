@@ -23,7 +23,12 @@ import { isPocketSpendCategory, isSavingsAccountName, isTransportCategory } from
 
 export default async function ForecastPage() {
   const today = todayKeyInTimeZone();
-  const periods = payPeriodsFrom(today, 36);
+  const anchor = today < CASHFLOW_HISTORY_CUTOFF ? CASHFLOW_HISTORY_CUTOFF : today;
+  const ahead = payPeriodsFrom(anchor, 36);
+  const lastStart = ahead[ahead.length - 1]?.start ?? anchor;
+  const periods = payPeriodsFrom(CASHFLOW_HISTORY_CUTOFF, 120).filter(
+    (period) => period.start <= lastStart,
+  );
   const [categories, accounts] = await Promise.all([
     ensureDailySpendCategories(),
     fetchAssetAccounts(),
@@ -54,7 +59,7 @@ export default async function ForecastPage() {
     .filter((row) => isSavingsAccountName(row.name))
     .reduce((sum, row) => sum + (row.balance ?? 0), 0);
   const categoryName = new Map(categories.map((category) => [category.id, category.name]));
-  const current = periods[0];
+  const current = periods.find((period) => period.start <= today && today <= period.end);
   let spentDaily = 0;
   let spentTransport = 0;
   const events: CashflowEvent[] = occurrences.map((entry) => {

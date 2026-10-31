@@ -19,11 +19,13 @@ export function CashflowClient({
   savedBase: boolean;
   loadError: string | null;
 }) {
-  const lowest = rows.reduce(
+  const projected = rows.filter((row) => row.phase !== "past");
+  const lowest = projected.reduce(
     (min, row) => Math.min(min, row.ending),
     Number.POSITIVE_INFINITY,
   );
-  const firstNegative = rows.find((row) => row.ending < 0) ?? null;
+  const firstNegative = projected.find((row) => row.ending < 0) ?? null;
+  const now = rows.find((row) => row.phase === "now") ?? null;
   const pair = (withSavings: number) => (
     <>
       {formatYen(withSavings - savings)}
@@ -36,8 +38,13 @@ export function CashflowClient({
     <div className="grid gap-4">
       <div>
         <h1 className="text-xl font-bold">キャッシュフロー</h1>
+        {now ? (
+          <a href="#cashflow-now" className="mt-2 inline-block text-sm text-accent hover:underline">
+            いまの期間へ
+          </a>
+        ) : null}
         <p className="mt-1 text-sm text-muted">
-          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。2026年10月29日までは旧履歴として外し、10月30日から計算します。期末の括弧内は貯金を含んだ額です。今の期間のデイリーと交通費は、予算から今日までに使った分を引いた残りです。
+          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。起点は2026年10月30日のまま残し、月が進んでもこの表の先頭から消えません。2026年10月29日までは旧履歴です。終わった期間は実績、いまの期間は色を付けています。期末の括弧内は貯金を含んだ額です。
         </p>
       </div>
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}
@@ -61,28 +68,41 @@ export function CashflowClient({
       {yearGroups.length > 0 ? (
         <section className="grid gap-2 sm:grid-cols-3">
           {yearGroups.map((group) => {
-            const closing = group.rows[group.rows.length - 1];
-            const lowestInYear = group.rows.reduce(
+            const projectedInYear = group.rows.filter((row) => row.phase !== "past");
+            const closing = projectedInYear[projectedInYear.length - 1] ?? null;
+            const lowestInYear = projectedInYear.reduce(
               (min, row) => Math.min(min, row.ending),
               Number.POSITIVE_INFINITY,
             );
+            const containsNow = group.rows.some((row) => row.phase === "now");
             return (
               <a
                 key={group.year}
                 href={`#cashflow-year-${group.year}`}
-                className="rounded-xl border border-line/80 bg-surface p-3 hover:border-accent"
+                className={`rounded-xl border p-3 hover:border-accent ${
+                  containsNow ? "border-accent bg-[#eef5f3]" : "border-line/80 bg-surface"
+                }`}
               >
-                <p className="text-sm font-bold">{group.year}年</p>
+                <p className="text-sm font-bold">
+                  {group.year}年
+                  {containsNow ? (
+                    <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                      いま
+                    </span>
+                  ) : null}
+                </p>
                 <p className="mt-1 text-[11px] text-muted">この年の最後の期末</p>
                 <p
                   className={`text-sm font-semibold tabular-nums ${
-                    closing.ending - savings < 0 ? "text-expense" : ""
+                    closing && closing.ending - savings < 0 ? "text-expense" : ""
                   }`}
                 >
-                  {pair(closing.ending)}
+                  {closing ? pair(closing.ending) : "実績のみ"}
                 </p>
                 <p className="mt-1 text-[11px] text-muted">
-                  この年の最低 {formatYen(lowestInYear - savings)}（{formatYen(lowestInYear)}）
+                  {closing
+                    ? `この年の最低 ${formatYen(lowestInYear - savings)}（${formatYen(lowestInYear)}）`
+                    : "この年は終わった期間だけです"}
                 </p>
               </a>
             );
@@ -117,10 +137,32 @@ export function CashflowClient({
               ...group.rows.map((row) => (
               <tr
                 key={row.period.start}
-                className={row.ending < 0 ? "bg-red-50/80" : "bg-white/70"}
+                id={row.phase === "now" ? "cashflow-now" : undefined}
+                className={
+                  row.phase === "now"
+                    ? "bg-[#eef5f3] outline outline-2 outline-accent"
+                    : row.phase === "past"
+                      ? "bg-white/40 text-muted"
+                      : row.ending < 0
+                        ? "bg-red-50/80"
+                        : "bg-white/70"
+                }
               >
-                <td className="px-3 py-2 whitespace-nowrap">{row.period.label}</td>
-                <td className="px-3 py-2 tabular-nums whitespace-nowrap">{pair(row.opening)}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {row.phase === "now" ? (
+                    <span className="mr-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
+                      いま
+                    </span>
+                  ) : row.phase === "past" ? (
+                    <span className="mr-2 rounded-full border border-line px-2 py-0.5 text-[10px]">
+                      済
+                    </span>
+                  ) : null}
+                  {row.period.label}
+                </td>
+                <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                  {row.phase === "past" ? "実績" : pair(row.opening)}
+                </td>
                 <td className="px-3 py-2 tabular-nums text-income">{formatYen(row.income)}</td>
                 <td className="px-3 py-2 tabular-nums text-expense">
                   {formatYen(row.scheduledExpense)}
@@ -130,10 +172,10 @@ export function CashflowClient({
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
                 <td
                   className={`px-3 py-2 font-semibold tabular-nums whitespace-nowrap ${
-                    row.ending - savings < 0 ? "text-expense" : ""
+                    row.phase !== "past" && row.ending - savings < 0 ? "text-expense" : ""
                   }`}
                 >
-                  {pair(row.ending)}
+                  {row.phase === "past" ? "実績" : pair(row.ending)}
                 </td>
                 <td className="px-3 py-2">
                   <EditPopover buttonLabel={row.custom ? "この期を編集済" : "この期だけ"} title="この期の予算">
