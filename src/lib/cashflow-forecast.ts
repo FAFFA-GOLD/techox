@@ -35,6 +35,8 @@ export type CashflowRow = {
   planAdjustment: number;
   ending: number;
   custom: boolean;
+  /** past は起点以降で、すでに終わった期間。期首と期末は出さない。 */
+  phase: "past" | "now" | "future";
 };
 
 function addDays(iso: string, days: number): string {
@@ -91,36 +93,64 @@ export function buildCashflowRows(input: {
   }
   const events = [...input.events, ...synthetic];
   let opening = input.opening;
-  return input.periods.map((period, index) => {
+  return input.periods.map((period) => {
     const custom = overrideByStart.get(period.start);
     const plan = custom ?? input.base;
-    const from = index === 0 ? addDays(input.today, 1) : period.start;
+    const phase: CashflowRow["phase"] =
+      period.end < input.today ? "past" : period.start > input.today ? "future" : "now";
+    const from = phase === "now" ? addDays(input.today, 1) : period.start;
     let income = 0;
     let scheduledExpense = 0;
     let extraExpense = 0;
+    let spentPocket = 0;
+    let spentTransport = 0;
     for (const event of events) {
       if (event.date < CASHFLOW_HISTORY_CUTOFF) continue;
+      if (phase === "past" && event.date > input.today) continue;
       if (!inRange(event.date, from, period.end)) continue;
       if (event.kind === "income") {
         income += event.amount;
+        continue;
+      }
+      const pocket =
+        event.categoryName != null && isPocketSpendCategory(event.categoryName);
+      const transport =
+        event.categoryName != null && isTransportCategory(event.categoryName);
+      if (phase === "past" && pocket) {
+        spentPocket += event.amount;
+        continue;
+      }
+      if (phase === "past" && transport) {
+        spentTransport += event.amount;
         continue;
       }
       if (event.scheduledRuleId) {
         scheduledExpense += event.amount;
         continue;
       }
-      if (
-        event.categoryName &&
-        (isPocketSpendCategory(event.categoryName) ||
-          isTransportCategory(event.categoryName))
-      ) {
-        continue;
-      }
+      if (pocket || transport) continue;
       extraExpense += event.amount;
+    }
+    if (phase === "past") {
+      return {
+        period,
+        opening: 0,
+        income,
+        scheduledExpense: scheduledExpense + extraExpense,
+        daily: spentPocket,
+        transport: spentTransport,
+        adjustment: 0,
+        planDaily: plan.daily,
+        planTransport: plan.transport,
+        planAdjustment: plan.adjustment,
+        ending: 0,
+        custom: Boolean(custom),
+        phase,
+      };
     }
     let daily = plan.daily;
     let transport = plan.transport;
-    if (index === 0) {
+    if (phase === "now") {
       daily = Math.max(0, plan.daily - input.spentDaily);
       transport = Math.max(0, plan.transport - input.spentTransport);
     }
@@ -139,6 +169,7 @@ export function buildCashflowRows(input: {
       planAdjustment: plan.adjustment,
       ending,
       custom: Boolean(custom),
+      phase,
     };
     opening = ending;
     return row;
