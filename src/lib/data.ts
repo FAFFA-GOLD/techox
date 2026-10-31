@@ -24,7 +24,8 @@ import type {
   Transaction,
   UserSettings,
 } from "@/lib/types";
-import { TRANSPORT_CATEGORY_NAME, DEFAULT_MAIN_BANK_NAME, DEFAULT_SECOND_BANK_NAME, DEFAULT_WALLET_ACCOUNTS } from "@/lib/types";
+import { todayKeyInTimeZone } from "@/lib/dates";
+import { TRANSPORT_CATEGORY_NAME, DEFAULT_MAIN_BANK_NAME, DEFAULT_SECOND_BANK_NAME, DEFAULT_WALLET_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS } from "@/lib/types";
 
 export async function fetchCategories(): Promise<Category[]> {
   const supabase = await createClient();
@@ -320,6 +321,46 @@ export async function ensureWalletAccounts(): Promise<void> {
   }
 
   await mergeWalletAliases(supabase, user.id, rows);
+
+  for (const savings of DEFAULT_SAVINGS_ACCOUNTS) {
+    let accountId = rows.find((row) => row.name === savings.name)?.id as
+      | string
+      | undefined;
+    if (!accountId) {
+      sort += 1;
+      const { data: created } = await supabase
+        .from("asset_accounts")
+        .insert({
+          user_id: user.id,
+          name: savings.name,
+          kind: "other",
+          is_main: false,
+          sort_order: sort,
+        })
+        .select("id, name")
+        .single();
+      if (!created) continue;
+      accountId = created.id as string;
+      rows.push({
+        id: created.id,
+        name: created.name,
+        sort_order: sort,
+        archived: false,
+      });
+    }
+    const { count } = await supabase
+      .from("account_balance_snapshots")
+      .select("id", { count: "exact", head: true })
+      .eq("asset_account_id", accountId);
+    if (count && count > 0) continue;
+    await supabase.from("account_balance_snapshots").insert({
+      user_id: user.id,
+      asset_account_id: accountId,
+      as_of_date: todayKeyInTimeZone(),
+      balance: savings.balance,
+      note: "貯金の初期額",
+    });
+  }
 
   const suica = rows.find((r) => r.name === "Suica");
   if (!suica) return;

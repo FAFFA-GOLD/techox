@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { saveDailyScratchpad } from "@/app/actions";
 import { formatYen } from "@/lib/money";
-import { evalArithmetic, fillMemoCalculations } from "@/lib/scratchpad-calc";
+import { evalArithmetic } from "@/lib/scratchpad-calc";
 
 type Props = {
   monthKey: string;
@@ -43,13 +43,30 @@ export function ScratchpadPanel({ monthKey, initialBody }: Props) {
 
   return (
     <section className="grid gap-3 rounded-xl border border-line/80 bg-white/60 p-4">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-bold">メモ・計算</h2>
-        <p className="mt-1 text-xs text-muted">
-          全月共通のメモ帳です。一度保存すれば、翌月以降も同じ内容が表示されます。
-          安い昼食・酒の単価など自由に書けます。行末を「=」にして「行を計算」で金額を出せます。
-        </p>
+        <button
+          type="button"
+          disabled={pending}
+          className="rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-deep disabled:opacity-60"
+          onClick={() => {
+            setError(null);
+            setMessage(null);
+            startTransition(async () => {
+              const res = await saveDailyScratchpad(monthKey, body);
+              if (res?.error) {
+                setError(res.error);
+                return;
+              }
+              setMessage("保存しました");
+            });
+          }}
+        >
+          {pending ? "保存中…" : "メモを保存"}
+        </button>
       </div>
+      {message ? <p className="text-sm text-income">{message}</p> : null}
+      {error ? <p className="text-sm text-expense">{error}</p> : null}
 
       <textarea
         value={body}
@@ -133,36 +150,6 @@ export function ScratchpadPanel({ monthKey, initialBody }: Props) {
         </label>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="rounded-md border border-line bg-white px-3 py-2 text-sm"
-          onClick={() => setBody((b) => fillMemoCalculations(b))}
-        >
-          行を計算（末尾 =）
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          className="rounded-md bg-accent px-3 py-2 text-sm text-white hover:bg-accent-deep disabled:opacity-60"
-          onClick={() => {
-            setError(null);
-            setMessage(null);
-            startTransition(async () => {
-              const res = await saveDailyScratchpad(monthKey, body);
-              if (res?.error) {
-                setError(res.error);
-                return;
-              }
-              setMessage("保存しました");
-            });
-          }}
-        >
-          {pending ? "保存中…" : "メモを保存"}
-        </button>
-        {message ? <span className="text-sm text-income">{message}</span> : null}
-        {error ? <span className="text-sm text-expense">{error}</span> : null}
-      </div>
     </section>
   );
 }
