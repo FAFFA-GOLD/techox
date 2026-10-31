@@ -30,6 +30,7 @@ import {
 import { EditPopover } from "@/components/edit-popover";
 import {
   defaultAccountId,
+  depositAccounts,
   PaymentSourceField,
 } from "@/components/payment-source-field";
 import {
@@ -1326,7 +1327,19 @@ function EntryForm({
   const [accountId, setAccountId] = useState(() =>
     defaultAccountId(accounts, categoryName, editing?.asset_account_id),
   );
+  const [flow, setFlow] = useState<"expense" | "income">(
+    editing && isIncomeEntry(editing) ? "income" : "expense",
+  );
+  const deposits = depositAccounts(accounts);
+  const [depositId, setDepositId] = useState(
+    () =>
+      deposits.find((account) => account.id === editing?.asset_account_id)?.id ??
+      deposits.find((account) => account.kind === "bank")?.id ??
+      deposits[0]?.id ??
+      "",
+  );
   const isEdit = Boolean(editing);
+  const isIncome = flow === "income";
 
   function pickCategory(id: string) {
     setCategoryId(id);
@@ -1363,9 +1376,31 @@ function EntryForm({
         });
       }}
     >
-      <p className="text-sm font-medium">
-        {isEdit ? "記録を編集" : "支出を追加（何回でも可）"}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">
+          {isEdit ? "記録を編集" : isIncome ? "収入を追加" : "支出を追加（何回でも可）"}
+        </p>
+        <div className="flex gap-1">
+          {(
+            [
+              ["expense", "支出"],
+              ["income", "収入"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFlow(id)}
+              className={`rounded-md px-2.5 py-1 text-xs ${
+                flow === id ? "bg-accent text-white" : "border border-line text-muted"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <input type="hidden" name="kind" value={flow} />
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
       {isEdit ? (
         <label className="grid gap-1 text-sm">
@@ -1381,7 +1416,21 @@ function EntryForm({
       ) : (
         <input type="hidden" name="date" value={date} />
       )}
-      <input type="hidden" name="category_id" value={categoryId} />
+      {isIncome ? (
+        <label className="grid gap-1 text-sm">
+          <span className="text-muted">用途</span>
+          <input
+            name="memo"
+            defaultValue={editing?.memo ?? ""}
+            className="rounded-md border border-line bg-white px-3 py-2"
+            placeholder="給与"
+          />
+        </label>
+      ) : (
+        <input type="hidden" name="category_id" value={categoryId} />
+      )}
+      {isIncome ? null : (
+      <>
       <div className="grid gap-1">
         <span className="text-sm text-muted">用途</span>
         <div className="flex flex-wrap gap-1.5">
@@ -1429,13 +1478,33 @@ function EntryForm({
           </button>
         </div>
       ) : null}
-      <PaymentSourceField
-        accounts={accounts}
-        categoryName={categoryName}
-        value={accountId}
-        onChange={setAccountId}
-      />
-      <div className="grid grid-cols-2 gap-2">
+      </>
+      )}
+      {isIncome ? (
+        <label className="grid gap-1 text-sm">
+          <span className="text-muted">入金先</span>
+          <select
+            name="asset_account_id"
+            value={depositId}
+            onChange={(event) => setDepositId(event.target.value)}
+            className="rounded-md border border-line bg-white px-3 py-2"
+          >
+            {deposits.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <PaymentSourceField
+          accounts={accounts}
+          categoryName={categoryName}
+          value={accountId}
+          onChange={setAccountId}
+        />
+      )}
+      <div className={isIncome ? "grid gap-2" : "grid grid-cols-2 gap-2"}>
         <label className="grid min-w-0 gap-1 text-sm">
           <span className="text-muted">金額（円）</span>
           <input
@@ -1447,6 +1516,7 @@ function EntryForm({
             placeholder="1200"
           />
         </label>
+        {isIncome ? null : (
         <label className="grid min-w-0 gap-1 text-sm">
           <span className="text-muted">ポイント決済（円相当）</span>
           <input
@@ -1458,10 +1528,14 @@ function EntryForm({
             placeholder="0"
           />
         </label>
+        )}
       </div>
+      {isIncome ? null : (
       <p className="text-[11px] text-muted">
         ポイントは月合計の参考表示のみ。小遣い予算・グラフ・注意アラートには含めません。
       </p>
+      )}
+      {isIncome ? null : (
       <label className="grid gap-1 text-sm">
         <span className="text-muted">メモ（任意）</span>
         <input
@@ -1471,10 +1545,11 @@ function EntryForm({
           placeholder="任意"
         />
       </label>
+      )}
       <div className="flex flex-wrap gap-2">
         <button
           type="submit"
-          disabled={pending || !categoryId}
+          disabled={pending || (isIncome ? !depositId : !categoryId)}
           className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-deep disabled:opacity-60"
         >
           {pending ? "保存中…" : isEdit ? "更新" : "追加"}
