@@ -161,7 +161,7 @@ function ProjectedRemainder({
 
   return (
     <section className="rounded-xl border border-line/80 bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+      <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-muted">総資産</p>
           <p className="mt-1 text-xs text-muted">{remainderLabel}</p>
@@ -178,10 +178,10 @@ function ProjectedRemainder({
             )}
           </p>
         </div>
-        <div className="min-w-0 sm:text-right">
+        <div className="min-w-0">
           <p className="text-xs text-muted">月末予想額</p>
           <p
-            className={`mt-2 text-xl font-bold tabular-nums ${
+            className={`mt-1 text-xl font-bold tabular-nums ${
               forecastWithout < 0 ? "text-expense" : ""
             }`}
           >

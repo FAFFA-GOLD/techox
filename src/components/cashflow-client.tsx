@@ -8,11 +8,13 @@ import { formatYen } from "@/lib/money";
 
 export function CashflowClient({
   rows,
+  savings,
   base,
   savedBase,
   loadError,
 }: {
   rows: CashflowRow[];
+  savings: number;
   base: CashflowPlanAmounts;
   savedBase: boolean;
   loadError: string | null;
@@ -22,28 +24,34 @@ export function CashflowClient({
     Number.POSITIVE_INFINITY,
   );
   const firstNegative = rows.find((row) => row.ending < 0) ?? null;
+  const pair = (withSavings: number) => (
+    <>
+      {formatYen(withSavings - savings)}
+      <span className="ml-1 font-normal text-muted">（{formatYen(withSavings)}）</span>
+    </>
+  );
 
   return (
     <div className="grid gap-4">
       <div>
         <h1 className="text-xl font-bold">キャッシュフロー</h1>
         <p className="mt-1 text-sm text-muted">
-          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。2026年10月29日までは旧履歴として外し、10月30日から計算します。今の期間のデイリーと交通費は、予算から今日までに使った分を引いた残りです。
+          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。2026年10月29日までは旧履歴として外し、10月30日から計算します。期末の括弧内は貯金を含んだ額です。今の期間のデイリーと交通費は、予算から今日までに使った分を引いた残りです。
         </p>
       </div>
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}
       <section className="grid gap-2 rounded-xl border border-line/80 bg-surface p-4 sm:grid-cols-3">
         <div>
           <p className="text-xs text-muted">いまの期末見込みの最低</p>
-          <p className={`text-xl font-bold tabular-nums ${lowest < 0 ? "text-expense" : ""}`}>
-            {rows.length === 0 ? "—" : formatYen(lowest)}
+          <p className={`text-xl font-bold tabular-nums ${lowest - savings < 0 ? "text-expense" : ""}`}>
+            {rows.length === 0 ? "—" : pair(lowest)}
           </p>
         </div>
         <div className="sm:col-span-2">
           <p className="text-xs text-muted">最初にマイナスになる期間</p>
           <p className="text-sm">
             {firstNegative
-              ? `${firstNegative.period.label}（${formatYen(firstNegative.ending)}）`
+              ? `${firstNegative.period.label} ${formatYen(firstNegative.ending - savings)}（${formatYen(firstNegative.ending)}）`
               : "この範囲ではマイナスになりません"}
           </p>
         </div>
@@ -71,7 +79,7 @@ export function CashflowClient({
                 className={row.ending < 0 ? "bg-red-50/80" : "bg-white/70"}
               >
                 <td className="px-3 py-2 whitespace-nowrap">{row.period.label}</td>
-                <td className="px-3 py-2 tabular-nums">{formatYen(row.opening)}</td>
+                <td className="px-3 py-2 tabular-nums whitespace-nowrap">{pair(row.opening)}</td>
                 <td className="px-3 py-2 tabular-nums text-income">{formatYen(row.income)}</td>
                 <td className="px-3 py-2 tabular-nums text-expense">
                   {formatYen(row.scheduledExpense)}
@@ -80,11 +88,11 @@ export function CashflowClient({
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.transport)}</td>
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
                 <td
-                  className={`px-3 py-2 font-semibold tabular-nums ${
-                    row.ending < 0 ? "text-expense" : ""
+                  className={`px-3 py-2 font-semibold tabular-nums whitespace-nowrap ${
+                    row.ending - savings < 0 ? "text-expense" : ""
                   }`}
                 >
-                  {formatYen(row.ending)}
+                  {pair(row.ending)}
                 </td>
                 <td className="px-3 py-2">
                   <EditPopover buttonLabel={row.custom ? "この期を編集済" : "この期だけ"} title="この期の予算">
