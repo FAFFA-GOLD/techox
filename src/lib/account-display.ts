@@ -49,19 +49,25 @@ export function buildAccountBalanceViews(
           appliedExpense: 0,
         };
       }
-      let balance = base.balance;
+      const asYen = (value: unknown) => {
+        const n = typeof value === "number" ? value : Number(value);
+        return Number.isFinite(n) ? n : 0;
+      };
+      const baseline = asYen(base.balance);
+      let balance = baseline;
       let appliedIncome = 0;
       let appliedExpense = 0;
       for (const row of movements) {
         if (row.asset_account_id !== account.id) continue;
         // 手入力した日は込み済み。今日より先の予定は残高に入れない。
         if (row.date <= base.asOf || row.date > asOfCap) continue;
+        const amount = asYen(row.amount);
         if (row.kind === "income") {
-          balance += row.amount;
-          appliedIncome += row.amount;
+          balance += amount;
+          appliedIncome += amount;
         } else {
-          balance -= row.amount;
-          appliedExpense += row.amount;
+          balance -= amount;
+          appliedExpense += amount;
         }
       }
       return {
@@ -69,7 +75,7 @@ export function buildAccountBalanceViews(
         name: account.name,
         kind: account.kind,
         balance,
-        baseline: base.balance,
+        baseline,
         asOf: base.asOf,
         appliedIncome,
         appliedExpense,

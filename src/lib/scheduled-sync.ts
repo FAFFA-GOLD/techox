@@ -1,7 +1,7 @@
 import "server-only";
 
-import { format } from "date-fns";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { todayKeyInTimeZone } from "@/lib/dates";
 import {
   scheduleOccurrenceDates,
   scheduleWindowStart,
@@ -14,6 +14,12 @@ import {
 } from "@/lib/types";
 
 type Db = SupabaseClient;
+
+/** 画面の「今日」は日本時間。Vercel の UTC で月がずれないようにする。 */
+function appToday(): Date {
+  const [year, month, day] = todayKeyInTimeZone().split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
 
 function missingTable(message: string): boolean {
   return (
@@ -35,7 +41,7 @@ export async function syncScheduledRule(
   userId: string,
   rule: ScheduledRule,
 ): Promise<{ error?: string }> {
-  const fromMonth = scheduleWindowStart(rule.start_date);
+  const fromMonth = scheduleWindowStart(rule.start_date, appToday());
   const dates = scheduleOccurrenceDates(rule, fromMonth);
   const wanted = new Set(dates);
 
@@ -102,15 +108,121 @@ export async function syncScheduledRule(
   return {};
 }
 
-async function extendAll(supabase: Db, userId: string): Promise<{ error?: string }> {
+async function fetchPages<T>(
+  load: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<{ rows: T[]; error?: string }> {
+  const pageSize = 1000;
+  const rows: T[] = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const { data, error } = await load(from, from + pageSize - 1);
+    if (error) return { rows, error: error.message };
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return { rows };
+}
+
+/**
+ * ページを開くたびに既存行を書き直すと、取引の件数だけ往復して画面が落ちる。
+ * ここは「まだ無い日」だけまとめて足す。金額の更新と削除は取引の保存時に行う。
+ */
+async function ensureFutureOccurrences(
+  supabase: Db,
+  userId: string,
+): Promise<{ error?: string }> {
   const { data, error } = await supabase
     .from("scheduled_rules")
     .select("*")
     .eq("user_id", userId);
   if (error) return { error: error.message };
-  for (const rule of (data ?? []) as ScheduledRule[]) {
-    const res = await syncScheduledRule(supabase, userId, rule);
-    if (res.error) return res;
+  const rules = (data ?? []) as ScheduledRule[];
+  if (rules.length === 0) return {};
+
+  const today = appToday();
+  let earliest = "9999-99";
+  const datesByRule = new Map<string, string[]>();
+  for (const rule of rules) {
+    const fromMonth = scheduleWindowStart(rule.start_date, today);
+    if (fromMonth < earliest) earliest = fromMonth;
+    datesByRule.set(rule.id, scheduleOccurrenceDates(rule, fromMonth));
+  }
+
+  const existing = await fetchPages<{ scheduled_rule_id: string; date: string }>(
+    (from, to) =>
+      supabase
+        .from("daily_spend_entries")
+        .select("scheduled_rule_id, date")
+        .eq("user_id", userId)
+        .not("scheduled_rule_id", "is", null)
+        .gte("date", `${earliest}-01`)
+        .range(from, to),
+  );
+  if (existing.error) return { error: existing.error };
+
+  const skips = await fetchPages<{ scheduled_rule_id: string; date: string }>(
+    (from, to) =>
+      supabase
+        .from("scheduled_rule_skips")
+        .select("scheduled_rule_id, date")
+        .eq("user_id", userId)
+        .range(from, to),
+  );
+  if (skips.error) return { error: skips.error };
+
+  const have = new Set(
+    existing.rows.map(
+      (row) => `${row.scheduled_rule_id}|${String(row.date).slice(0, 10)}`,
+    ),
+  );
+  const skipSet = new Set(
+    skips.rows.map(
+      (row) => `${row.scheduled_rule_id}|${String(row.date).slice(0, 10)}`,
+    ),
+  );
+
+  const inserts: {
+    user_id: string;
+    category_id: string | null;
+    date: string;
+    amount: number;
+    points_amount: number;
+    memo: string;
+    kind: ScheduledRule["flow"];
+    asset_account_id: string | null;
+    scheduled_rule_id: string;
+    amount_locked: boolean;
+  }[] = [];
+  for (const rule of rules) {
+    for (const date of datesByRule.get(rule.id) ?? []) {
+      const key = `${rule.id}|${date}`;
+      if (skipSet.has(key) || have.has(key)) continue;
+      inserts.push({
+        user_id: userId,
+        category_id: rule.flow === "income" ? null : rule.category_id,
+        date,
+        amount: rule.amount,
+        points_amount: 0,
+        memo: rule.name,
+        kind: rule.flow,
+        asset_account_id: rule.asset_account_id,
+        scheduled_rule_id: rule.id,
+        amount_locked: false,
+      });
+    }
+  }
+
+  for (let i = 0; i < inserts.length; i += 200) {
+    const chunk = inserts.slice(i, i + 200);
+    const { error: insertError } = await supabase
+      .from("daily_spend_entries")
+      .insert(chunk);
+    if (!insertError) continue;
+    if (/duplicate|unique/i.test(insertError.message)) continue;
+    return { error: insertError.message };
   }
   return {};
 }
@@ -183,7 +295,23 @@ export async function ensureSchedulesMigrated(
       .upsert({ user_id: userId }, { onConflict: "user_id" });
     if (insertSettingsError) return { error: insertSettingsError.message };
   }
-  if (settings?.schedules_migrated) return extendAll(supabase, userId);
+  if (settings?.schedules_migrated) {
+    return ensureFutureOccurrences(supabase, userId);
+  }
+
+  const { count: existingRules, error: countError } = await supabase
+    .from("scheduled_rules")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (countError) return { error: countError.message };
+  if ((existingRules ?? 0) > 0) {
+    const { error: flagError } = await supabase
+      .from("user_settings")
+      .update({ schedules_migrated: true })
+      .eq("user_id", userId);
+    if (flagError) return { error: flagError.message };
+    return ensureFutureOccurrences(supabase, userId);
+  }
 
   const fixed =
     categories.find((c) => c.name === FIXED_COST_CATEGORY_NAME) ?? null;
@@ -199,7 +327,7 @@ export async function ensureSchedulesMigrated(
   if (cardsRes.error) return { error: cardsRes.error.message };
   if (loansRes.error) return { error: loansRes.error.message };
 
-  const fromMonth = format(new Date(), "yyyy-MM");
+  const fromMonth = todayKeyInTimeZone().slice(0, 7);
   const { data: confirmedTx } = await supabase
     .from("transactions")
     .select("recurring_rule_id, date, amount, kind")

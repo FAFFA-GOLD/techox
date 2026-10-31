@@ -25,11 +25,13 @@ import type {
 } from "./types";
 
 export function formatYen(amount: number): string {
+  const value = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("ja-JP", {
     style: "currency",
     currency: "JPY",
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(Math.round(value));
 }
 
 export function signedAmount(kind: TransactionKind, amount: number): number {

@@ -200,13 +200,13 @@ async function moveSnapshots(
 async function mergeWalletAliases(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-  rows: { id: string; name: string }[],
+  rows: { id: string; name: string; archived?: boolean }[],
 ) {
   for (const group of WALLET_ALIASES) {
-    const canonical = rows.find((row) => row.name === group.canonical);
+    const canonical = rows.find((row) => row.name === group.canonical && !row.archived);
     if (!canonical) continue;
     for (const aliasName of group.aliases) {
-      const alias = rows.find((row) => row.name === aliasName);
+      const alias = rows.find((row) => row.name === aliasName && !row.archived);
       if (!alias || alias.id === canonical.id) continue;
       await retargetAccount(
         supabase,
@@ -265,10 +265,11 @@ async function mergeWalletAliases(
         canonical.id,
       );
       await moveSnapshots(supabase, userId, alias.id, canonical.id);
-      await supabase
+      const { error: archiveError } = await supabase
         .from("asset_accounts")
         .update({ archived: true })
         .eq("id", alias.id);
+      if (!archiveError) alias.archived = true;
     }
   }
 }
@@ -283,7 +284,7 @@ export async function ensureWalletAccounts(): Promise<void> {
 
   const { data: existing } = await supabase
     .from("asset_accounts")
-    .select("id, name, sort_order")
+    .select("id, name, sort_order, archived")
     .eq("user_id", user.id);
   const rows = existing ?? [];
   const names = new Set(rows.map((r) => r.name as string));
@@ -305,7 +306,12 @@ export async function ensureWalletAccounts(): Promise<void> {
       .single();
     if (created) {
       names.add(wallet.name);
-      rows.push({ id: created.id, name: created.name, sort_order: sort });
+      rows.push({
+        id: created.id,
+        name: created.name,
+        sort_order: sort,
+        archived: false,
+      });
     }
   }
 
