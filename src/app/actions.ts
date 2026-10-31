@@ -1180,7 +1180,15 @@ export async function updateScheduledOccurrenceAmount(formData: FormData) {
 
   const previousDate = current.date ? String(current.date).slice(0, 10) : "";
   if (previousDate && previousDate !== date) {
-    await supabase.from("scheduled_rule_skips").upsert(
+    const { data: clash } = await supabase
+      .from("daily_spend_entries")
+      .select("id")
+      .eq("scheduled_rule_id", current.scheduled_rule_id)
+      .eq("date", date)
+      .neq("id", id)
+      .maybeSingle();
+
+    const { error: skipError } = await supabase.from("scheduled_rule_skips").upsert(
       {
         user_id: user.id,
         scheduled_rule_id: current.scheduled_rule_id,
@@ -1188,13 +1196,38 @@ export async function updateScheduledOccurrenceAmount(formData: FormData) {
       },
       { onConflict: "scheduled_rule_id,date" },
     );
+    if (skipError) return { error: migrationHint(skipError.message) ?? skipError.message };
+
+    if (clash?.id) {
+      const { error } = await supabase
+        .from("daily_spend_entries")
+        .update({ amount, amount_locked: true })
+        .eq("id", clash.id);
+      if (error) return { error: migrationHint(error.message) ?? error.message };
+      const { error: deleteError } = await supabase
+        .from("daily_spend_entries")
+        .delete()
+        .eq("id", id);
+      if (deleteError) return { error: migrationHint(deleteError.message) ?? deleteError.message };
+      revalidateMoney();
+      return { ok: true as const };
+    }
   }
 
   const { error } = await supabase
     .from("daily_spend_entries")
-    .update({ date, amount, amount_locked: true })
+    .update(
+      previousDate === date
+        ? { amount, amount_locked: true }
+        : { date, amount, amount_locked: true },
+    )
     .eq("id", id);
-  if (error) return { error: migrationHint(error.message) ?? error.message };
+  if (error) {
+    if (error.message.includes("daily_spend_entries_rule_date_uidx")) {
+      return { error: "その日付には、同じ取引がすでにあります。日付を変えて保存してください。" };
+    }
+    return { error: migrationHint(error.message) ?? error.message };
+  }
   revalidateMoney();
   return { ok: true as const };
 }
