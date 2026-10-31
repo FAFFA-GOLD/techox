@@ -1052,11 +1052,7 @@ function DayPanel({
                 : "bg-accent text-white hover:bg-accent-deep"
             } disabled:opacity-60`}
           >
-            {holidayPending
-              ? "更新中…"
-              : isHoliday
-                ? "休日を解除"
-                : "この日を休日にする"}
+            {holidayPending ? "更新中…" : "休日登録/解除"}
           </button>
         </form>
         <form
@@ -1078,11 +1074,7 @@ function DayPanel({
                 : "bg-accent text-white hover:bg-accent-deep"
             } disabled:opacity-60`}
           >
-            {makikoPending
-              ? "更新中…"
-              : isMakikoOff
-                ? "マキコ休みを解除"
-                : "マキコ休みにする"}
+            {makikoPending ? "更新中…" : "マキコ休日"}
           </button>
         </form>
       </div>
