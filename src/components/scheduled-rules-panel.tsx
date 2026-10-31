@@ -12,13 +12,17 @@ import type {
   AssetAccount,
   DailySpendCategory,
   DailySpendEntry,
+  ScheduleKind,
   ScheduledRule,
 } from "@/lib/types";
 import {
   FIXED_COST_CATEGORY_NAME,
   isConfidentialCategory,
   isFixedCostCategory,
+  scheduleKindLabel,
 } from "@/lib/types";
+
+const KIND_ORDER: ScheduleKind[] = ["recurring", "card", "loan"];
 
 type Props = {
   rules: ScheduledRule[];
@@ -55,7 +59,7 @@ export function ScheduledRulesPanel({
         <div>
           <h2 className="text-lg font-bold">取引</h2>
           <p className="mt-1 text-xs text-muted">
-            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとです。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
+            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとで、すべてと種別（定期・カード・ローン）で絞れます。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
           </p>
         </div>
         <EditPopover buttonLabel="取引を追加" title="取引を追加">
@@ -111,10 +115,26 @@ function OccurrenceBrowser({
   categories: DailySpendCategory[];
   monthKey?: string;
 }) {
-  const [selectedId, setSelectedId] = useState("all");
+  const [selectedKind, setSelectedKind] = useState<"all" | ScheduleKind>("all");
   const ruleById = useMemo(
     () => new Map(rules.map((rule) => [rule.id, rule])),
     [rules],
+  );
+  const kinds = KIND_ORDER.filter((kind) =>
+    rules.some((rule) => rule.schedule_kind === kind),
+  );
+  const selectedRules = useMemo(() => {
+    if (selectedKind === "all") return [];
+    return rules
+      .filter((rule) => rule.schedule_kind === selectedKind)
+      .sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, "ja") || a.created_at.localeCompare(b.created_at),
+      );
+  }, [rules, selectedKind]);
+  const selectedRuleIds = useMemo(
+    () => new Set(selectedRules.map((rule) => rule.id)),
+    [selectedRules],
   );
   const scoped = occurrences.filter((row) => {
     if (!row.scheduled_rule_id) return false;
@@ -122,7 +142,9 @@ function OccurrenceBrowser({
     return true;
   });
   const inScope = scoped.filter(
-    (row) => selectedId === "all" || row.scheduled_rule_id === selectedId,
+    (row) =>
+      selectedKind === "all" ||
+      (row.scheduled_rule_id != null && selectedRuleIds.has(row.scheduled_rule_id)),
   );
   const sorted = [...inScope].sort(
     (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
@@ -138,44 +160,43 @@ function OccurrenceBrowser({
   const duplicateKeys = new Set(
     [...seen.entries()].filter(([, count]) => count > 1).map(([key]) => key),
   );
-  const selected = selectedId === "all" ? null : ruleById.get(selectedId) ?? null;
-  const chips = [...rules].sort((a, b) => a.name.localeCompare(b.name, "ja") || a.created_at.localeCompare(b.created_at));
-  const nameCounts = new Map<string, number>();
-  for (const rule of chips) nameCounts.set(rule.name, (nameCounts.get(rule.name) ?? 0) + 1);
-
   const list = (
     <>
       <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
-        <FilterChip active={selectedId === "all"} onClick={() => setSelectedId("all")}>
+        <FilterChip active={selectedKind === "all"} onClick={() => setSelectedKind("all")}>
           すべて
         </FilterChip>
-        {chips.map((rule) => (
+        {kinds.map((kind) => (
           <FilterChip
-            key={rule.id}
-            active={selectedId === rule.id}
-            onClick={() => setSelectedId(rule.id)}
+            key={kind}
+            active={selectedKind === kind}
+            onClick={() => setSelectedKind(kind)}
           >
-            {rule.name}
-            {(nameCounts.get(rule.name) ?? 0) > 1
-              ? `（${rule.day_of_month}日 ${formatYen(rule.amount)}）`
-              : ""}
+            {scheduleKindLabel(kind)}
           </FilterChip>
         ))}
       </div>
-      {selected ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line/70 px-3 py-2">
-          <p className="min-w-0 flex-1 text-xs text-muted">
-            {selected.name} の登録そのものを直す・消す
-          </p>
-          <EditPopover buttonLabel="登録を編集" title="取引を編集">
-            <RuleForm accounts={accounts} categories={categories} rule={selected} />
-          </EditPopover>
-          <DeleteRuleButton id={selected.id} label="登録を削除" />
-        </div>
+      {selectedRules.length > 0 ? (
+        <ul className="divide-y divide-line/70 border-t border-line/70">
+          {selectedRules.map((rule) => (
+            <li key={rule.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <p className="min-w-0 flex-1 text-xs text-muted">
+                <span className="font-medium text-ink">{rule.name}</span>
+                {` · ${ruleScheduleText(rule)} · ${formatYen(rule.amount)}`}
+              </p>
+              <EditPopover buttonLabel="登録を編集" title="取引を編集">
+                <RuleForm accounts={accounts} categories={categories} rule={rule} />
+              </EditPopover>
+              <DeleteRuleButton id={rule.id} label="登録を削除" />
+            </li>
+          ))}
+        </ul>
       ) : null}
       {sorted.length === 0 ? (
         <p className="border-t border-line/70 px-3 py-4 text-sm text-muted">
-          {selected ? "この登録の発生はまだありません。" : "この範囲の発生はまだありません。"}
+          {selectedKind === "all"
+            ? "この範囲の発生はまだありません。"
+            : "この種別の発生はまだありません。"}
         </p>
       ) : (
         <ul className="divide-y divide-line/70 border-t border-line/70">
