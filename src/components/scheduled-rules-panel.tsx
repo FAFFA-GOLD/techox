@@ -294,10 +294,11 @@ function OccurrenceBrowser({
                 >
                   {formatYen(row.amount)}
                 </p>
-                <EditPopover buttonLabel="この分を編集" title="この月の金額">
+                <EditPopover buttonLabel="この分を編集" title="この分の日付と金額">
                   <OccurrenceAmountForm
                     entryId={row.id}
                     amount={row.amount}
+                    date={row.date}
                     ruleAmount={rule?.amount ?? null}
                     label={occurrenceMark(row.date)}
                   />
@@ -343,11 +344,13 @@ function OccurrenceBrowser({
 function OccurrenceAmountForm({
   entryId,
   amount,
+  date,
   ruleAmount,
   label,
 }: {
   entryId: string;
   amount: number;
+  date: string;
   ruleAmount: number | null;
   label: string;
 }) {
@@ -365,12 +368,22 @@ function OccurrenceAmountForm({
     >
       <input type="hidden" name="id" value={entryId} />
       <p className="text-xs text-muted">
-        {label} だけ金額を変えます。毎月の登録
+        {label} の日付と金額を変えます。日付を移すと、元の日はもう作られません。毎月の登録
         {ruleAmount != null ? `（${formatYen(ruleAmount)}）` : ""}
-        と、まだ金額が決まっていない先の月はそのままです。
+        と、まだ直していない先の月はそのままです。
       </p>
       <label className="grid gap-1 text-sm">
-        <span className="text-muted">この月の金額（円）</span>
+        <span className="text-muted">日付</span>
+        <input
+          name="date"
+          type="date"
+          required
+          defaultValue={date.slice(0, 10)}
+          className="w-fit rounded-md border border-line bg-white px-3 py-2"
+        />
+      </label>
+      <label className="grid gap-1 text-sm">
+        <span className="text-muted">この分の金額（円）</span>
         <input
           name="amount"
           type="number"
@@ -386,7 +399,7 @@ function OccurrenceAmountForm({
         disabled={pending}
         className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
       >
-        {pending ? "保存しています…" : "この月だけ保存"}
+        {pending ? "保存しています…" : "この分を保存"}
       </button>
     </form>
   );

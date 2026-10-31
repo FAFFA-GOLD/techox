@@ -1162,23 +1162,37 @@ export async function updateDailySpendEntry(formData: FormData) {
 }
 
 export async function updateScheduledOccurrenceAmount(formData: FormData) {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
   const id = String(formData.get("id") ?? "");
   const amount = parseAmount(formData.get("amount"));
+  const date = String(formData.get("date") ?? "").slice(0, 10);
   if (!id || amount == null) return { error: "金額を入力してください" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "日付を入力してください" };
 
   const { data: current } = await supabase
     .from("daily_spend_entries")
-    .select("id, scheduled_rule_id")
+    .select("id, scheduled_rule_id, date")
     .eq("id", id)
     .maybeSingle();
   if (!current?.scheduled_rule_id) {
     return { error: "この行は取引の発生ではありません" };
   }
 
+  const previousDate = current.date ? String(current.date).slice(0, 10) : "";
+  if (previousDate && previousDate !== date) {
+    await supabase.from("scheduled_rule_skips").upsert(
+      {
+        user_id: user.id,
+        scheduled_rule_id: current.scheduled_rule_id,
+        date: previousDate,
+      },
+      { onConflict: "scheduled_rule_id,date" },
+    );
+  }
+
   const { error } = await supabase
     .from("daily_spend_entries")
-    .update({ amount, amount_locked: true })
+    .update({ date, amount, amount_locked: true })
     .eq("id", id);
   if (error) return { error: migrationHint(error.message) ?? error.message };
   revalidateMoney();
