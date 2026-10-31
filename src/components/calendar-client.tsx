@@ -53,6 +53,7 @@ import type {
   DailySpendEntry,
   DailySpendHoliday,
   DailySpendMakikoOff,
+  LunchMenuItem,
   ScheduledRule,
 } from "@/lib/types";
 import {
@@ -75,6 +76,7 @@ import {
 } from "@/lib/types";
 import { DailySpendCategoryList } from "@/components/daily-spend-category-list";
 import { DailySpendCharts } from "@/components/daily-spend-charts";
+import { LunchCalcClient } from "@/components/lunch-calc-client";
 import { ScratchpadPanel } from "@/components/scratchpad-panel";
 
 type ViewMode = "calendar" | "list";
@@ -98,6 +100,7 @@ type Props = {
   /** 今日を含む暦月の記録。翌月以降は含まない */
   remainderEntries: DailySpendEntry[];
   remainderLabel: string;
+  lunchMenuItems: LunchMenuItem[];
 };
 
 function calUrl(
@@ -213,9 +216,11 @@ export function CalendarClient({
   scheduleError,
   remainderEntries,
   remainderLabel,
+  lunchMenuItems,
 }: Props) {
   const router = useRouter();
   const [txOpen, setTxOpen] = useState(false);
+  const [tool, setTool] = useState<"memo" | "lunch">("memo");
   const monthDate = parseISO(`${monthKey}-01`);
   const todayStr = todayKeyInTimeZone();
   const todayMonth = monthKeyInTimeZone();
@@ -946,16 +951,36 @@ export function CalendarClient({
           </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/calendar/lunch-calc?month=${monthKey}`}
-              className="rounded-md border border-line bg-white/80 px-3 py-2 text-sm text-muted hover:text-ink"
-            >
-              昼食計算
-            </Link>
+          <div className="grid gap-2">
+            <p className="text-xs font-medium text-muted">便利ツール</p>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["memo", "メモ・計算"],
+                  ["lunch", "昼食計算"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTool(id)}
+                  className={`rounded-md px-3 py-2 text-sm ${
+                    tool === id
+                      ? "bg-accent text-white"
+                      : "border border-line bg-white/80 text-muted hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <ScratchpadPanel monthKey={monthKey} initialBody={scratchpadBody} />
+          {tool === "memo" ? (
+            <ScratchpadPanel monthKey={monthKey} initialBody={scratchpadBody} />
+          ) : (
+            <LunchCalcClient initialItems={lunchMenuItems} />
+          )}
         </div>
 
         <div className="grid gap-4 self-start">
@@ -1113,75 +1138,124 @@ function DayPanel({
         ) : null}
       </form>
 
-      <EntryForm
-        key={editing?.id ?? `new-${date}`}
-        date={date}
-        categories={categories}
-        accounts={accounts}
-        editing={editing}
-        onCancel={() => setEditing(null)}
-      />
+      <div className="grid gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-3">
+        <div>
+          <h3 className="text-sm font-bold">日々の収支</h3>
+          <p className="mt-0.5 text-[11px] text-muted">
+            日付の金額と予算に入る、その日の支出です。
+          </p>
+        </div>
+        {editing?.scheduled_rule_id ? null : (
+          <EntryForm
+            key={editing?.id ?? `new-${date}`}
+            date={date}
+            categories={categories}
+            accounts={accounts}
+            editing={editing}
+            onCancel={() => setEditing(null)}
+          />
+        )}
+        <DayEntryList
+          entries={entries.filter((entry) => !entry.scheduled_rule_id)}
+          accounts={accounts}
+          empty="この日の日々の支出はまだありません。"
+          onEdit={setEditing}
+        />
+      </div>
 
-      {entries.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-sm text-muted">
-          この日の記録はまだありません。何回でも追加できます。
-        </p>
-      ) : (
-        <ul className="divide-y divide-line/70 overflow-hidden rounded-lg border border-line/70">
-          {entries.map((e) => (
-            <li key={e.id} className="flex items-center gap-2 px-3 py-2.5">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{
-                  backgroundColor: e.daily_spend_categories?.color ?? "#64748b",
-                }}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {isIncomeEntry(e)
-                    ? "収入"
-                    : (e.daily_spend_categories?.name ?? "用途")}
-                  {e.memo ? ` · ${e.memo}` : ""}
-                  {e.scheduled_rule_id ? (
-                    <span className="ml-1 text-[10px] text-muted">取引</span>
-                  ) : null}
-                </p>
-                <p className="truncate text-[11px] text-muted">
-                  {accounts.find((a) => a.id === e.asset_account_id)?.name ?? ""}
-                </p>
-              </div>
-              <p className="shrink-0 text-right text-sm">
-                <span
-                  className={`tabular-nums ${
-                    isIncomeEntry(e) ? "text-income" : "text-expense"
-                  }`}
-                >
-                  {formatYen(e.amount)}
-                </span>
-                {(e.points_amount ?? 0) > 0 ? (
-                  <span className="mt-0.5 block text-[10px] tabular-nums text-muted">
-                    Pt {formatYen(e.points_amount)}
-                  </span>
-                ) : null}
-              </p>
-              <button
-                type="button"
-                className="text-xs text-accent"
-                onClick={() => setEditing(e)}
-              >
-                編集
-              </button>
-              <form action={deleteDailySpendEntry}>
-                <input type="hidden" name="id" value={e.id} />
-                <button type="submit" className="text-xs text-muted hover:text-expense">
-                  削除
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="grid gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-3">
+        <div>
+          <h3 className="text-sm font-bold">取引</h3>
+          <p className="mt-0.5 text-[11px] text-muted">
+            取引で登録した、この日の入出金です。
+          </p>
+        </div>
+        {editing?.scheduled_rule_id ? (
+          <EntryForm
+            key={editing.id}
+            date={date}
+            categories={categories}
+            accounts={accounts}
+            editing={editing}
+            onCancel={() => setEditing(null)}
+          />
+        ) : null}
+        <DayEntryList
+          entries={entries.filter((entry) => entry.scheduled_rule_id)}
+          accounts={accounts}
+          empty="この日の取引はありません。"
+          onEdit={setEditing}
+        />
+      </div>
     </section>
+  );
+}
+
+function DayEntryList({
+  entries,
+  accounts,
+  empty,
+  onEdit,
+}: {
+  entries: DailySpendEntry[];
+  accounts: AssetAccount[];
+  empty: string;
+  onEdit: (entry: DailySpendEntry) => void;
+}) {
+  if (entries.length === 0) {
+    return <p className="text-xs text-muted">{empty}</p>;
+  }
+  return (
+    <ul className="divide-y divide-line/70 overflow-hidden rounded-lg border border-line/70 bg-white">
+      {entries.map((e) => (
+        <li key={e.id} className="flex items-center gap-2 px-3 py-2.5">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{
+              backgroundColor: e.daily_spend_categories?.color ?? "#64748b",
+            }}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {isIncomeEntry(e)
+                ? "収入"
+                : (e.daily_spend_categories?.name ?? "用途")}
+              {e.memo ? ` · ${e.memo}` : ""}
+            </p>
+            <p className="truncate text-[11px] text-muted">
+              {accounts.find((a) => a.id === e.asset_account_id)?.name ?? ""}
+            </p>
+          </div>
+          <p className="shrink-0 text-right text-sm">
+            <span
+              className={`tabular-nums ${
+                isIncomeEntry(e) ? "text-income" : "text-expense"
+              }`}
+            >
+              {formatYen(e.amount)}
+            </span>
+            {(e.points_amount ?? 0) > 0 ? (
+              <span className="mt-0.5 block text-[10px] tabular-nums text-muted">
+                Pt {formatYen(e.points_amount)}
+              </span>
+            ) : null}
+          </p>
+          <button
+            type="button"
+            className="text-xs text-accent"
+            onClick={() => onEdit(e)}
+          >
+            編集
+          </button>
+          <form action={deleteDailySpendEntry}>
+            <input type="hidden" name="id" value={e.id} />
+            <button type="submit" className="text-xs text-muted hover:text-expense">
+              削除
+            </button>
+          </form>
+        </li>
+      ))}
+    </ul>
   );
 }
 
