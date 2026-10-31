@@ -175,7 +175,7 @@ function ProjectedRemainder({
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-muted">総資産</p>
           <p className="mt-1 text-xs text-muted">{remainderLabel}</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums">
+          <p className="mt-2 text-xl font-bold tabular-nums sm:text-2xl">
             {known.length === 0 ? (
               "未登録"
             ) : (
@@ -847,7 +847,7 @@ export function CalendarClient({
       <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_1fr]">
         <div className="order-1 grid gap-4 lg:col-start-1 lg:row-start-1">
           <div className="overflow-hidden rounded-xl border border-line/80 bg-surface">
-          <div className="flex flex-wrap items-center gap-2 border-b border-line/70 bg-white/70 px-2 py-1.5 text-[10px] text-muted">
+          <div className="hidden flex-wrap items-center gap-2 border-b border-line/70 bg-white/70 px-2 py-1.5 text-[10px] text-muted sm:flex">
             <span className="rounded border border-[#d97706] bg-[#fffbeb] px-1 py-0.5 font-semibold text-[#b45309]">
               注意
             </span>
@@ -907,7 +907,7 @@ export function CalendarClient({
                   onClick={() =>
                     router.push(calUrl(monthKey, { date: key, compare: compareMonth }))
                   }
-                  className={`min-h-[4.5rem] border-b border-r border-line/40 px-1.5 py-1.5 text-left transition ${
+                  className={`min-h-14 border-b border-r border-line/40 px-0.5 py-1 text-left transition sm:min-h-[4.5rem] sm:px-1.5 sm:py-1.5 ${
                     selected ? "bg-accent/10 ring-1 ring-inset ring-accent/40" : ""
                   } ${
                     inMonth

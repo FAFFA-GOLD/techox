@@ -363,6 +363,14 @@ export async function ensureWalletAccounts(): Promise<void> {
   await mergeWalletAliases(supabase, user.id, rows);
   await foldEarphoneSavingsIntoHdd(supabase, user.id, rows);
 
+  const { data: savingsSnaps } = await supabase
+    .from("account_balance_snapshots")
+    .select("asset_account_id")
+    .eq("user_id", user.id);
+  const seededSavings = new Set(
+    (savingsSnaps ?? []).map((row) => row.asset_account_id as string),
+  );
+
   for (const savings of DEFAULT_SAVINGS_ACCOUNTS) {
     let accountId = rows.find((row) => row.name === savings.name)?.id as
       | string
@@ -389,11 +397,7 @@ export async function ensureWalletAccounts(): Promise<void> {
         archived: false,
       });
     }
-    const { count } = await supabase
-      .from("account_balance_snapshots")
-      .select("id", { count: "exact", head: true })
-      .eq("asset_account_id", accountId);
-    if (count && count > 0) continue;
+    if (seededSavings.has(accountId)) continue;
     await supabase.from("account_balance_snapshots").insert({
       user_id: user.id,
       asset_account_id: accountId,

@@ -25,10 +25,10 @@ export function AppNav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 bg-white/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-1.5 px-2 py-2 sm:gap-2 sm:px-3 sm:py-3">
         <Link
           href="/calendar"
-          className="shrink-0 text-lg font-bold tracking-tight text-accent-deep"
+          className="shrink-0 text-base font-bold tracking-tight text-accent-deep sm:text-lg"
         >
           {BRAND_NAME}
         </Link>

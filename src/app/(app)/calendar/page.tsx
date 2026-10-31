@@ -51,9 +51,10 @@ export default async function CalendarPage({ searchParams }: Props) {
     ensureDailySpendCategories(),
     fetchAssetAccounts(),
   ]);
-  const scheduleError = await prepareDailySpendSchedules(categories, accounts);
-
-  const snapshots = await fetchAccountBalanceSnapshots();
+  const [scheduleError, snapshots] = await Promise.all([
+    prepareDailySpendSchedules(categories, accounts),
+    fetchAccountBalanceSnapshots(),
+  ]);
   const today = todayKeyInTimeZone();
   const asOfDates = accounts
     .map((account) => {

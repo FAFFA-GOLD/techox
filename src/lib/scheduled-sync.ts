@@ -257,6 +257,9 @@ async function dedupeScheduledCopies(
     if (removedSkips.error) return { rules, error: removedSkips.error };
     const removedRules = await deleteByIds(supabase, "scheduled_rules", [...removed]);
     if (removedRules.error) return { rules, error: removedRules.error };
+  } else {
+    // 複製が無いときは、全履歴の照合を毎回しない。画面を開くたびに全件を読むと遅くなる。
+    return { rules };
   }
 
   const rows = await fetchPages<SpendRow>((from, to) =>
