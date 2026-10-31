@@ -234,25 +234,35 @@ export function CalendarClient({
     [categories],
   );
 
+  const fixedCategoryIds = useMemo(
+    () =>
+      new Set(
+        categories.filter((c) => isFixedCostCategory(c.name)).map((c) => c.id),
+      ),
+    [categories],
+  );
+
   const dayTotals = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of entries) {
       if (isIncomeEntry(e) || !e.category_id) continue;
       if (excludedCategoryIds.has(e.category_id)) continue;
+      if (fixedCategoryIds.has(e.category_id)) continue;
       map.set(e.date, (map.get(e.date) ?? 0) + e.amount);
     }
     return map;
-  }, [entries, excludedCategoryIds]);
+  }, [entries, excludedCategoryIds, fixedCategoryIds]);
 
   const dayCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of entries) {
       if (isIncomeEntry(e) || !e.category_id) continue;
       if (excludedCategoryIds.has(e.category_id)) continue;
+      if (fixedCategoryIds.has(e.category_id)) continue;
       map.set(e.date, (map.get(e.date) ?? 0) + 1);
     }
     return map;
-  }, [entries, excludedCategoryIds]);
+  }, [entries, excludedCategoryIds, fixedCategoryIds]);
 
   const spentByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
@@ -921,10 +931,16 @@ function DayPanel({
   isMakikoOff: boolean;
   accounts: AssetAccount[];
 }) {
-  const dayTotal = entries.reduce((s, e) => {
-    if (isIncomeEntry(e)) return s;
-    return s + e.amount;
-  }, 0);
+  const countsInDayTotal = (e: DailySpendEntry) => {
+    if (isIncomeEntry(e) || !e.category_id) return false;
+    const name =
+      e.daily_spend_categories?.name ??
+      categories.find((c) => c.id === e.category_id)?.name ??
+      "";
+    return !isFixedCostCategory(name);
+  };
+  const daySpendEntries = entries.filter(countsInDayTotal);
+  const dayTotal = daySpendEntries.reduce((s, e) => s + e.amount, 0);
   const dayIncome = entries.reduce((s, e) => {
     if (!isIncomeEntry(e)) return s;
     return s + e.amount;
@@ -947,7 +963,7 @@ function DayPanel({
           <span className="font-semibold tabular-nums text-expense">
             {formatYen(dayTotal)}
           </span>
-          （{entries.length}件）
+          （{daySpendEntries.length}件）
           {dayIncome > 0 ? (
             <span className="ml-2 tabular-nums text-income">
               · 収入 {formatYen(dayIncome)}
