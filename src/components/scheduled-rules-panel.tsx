@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
 import { deleteScheduledRule, saveScheduledRule } from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
 import { formatYen } from "@/lib/money";
+import { ruleOccursInMonth } from "@/lib/schedule-dates";
 import type { AssetAccount, DailySpendCategory, ScheduledRule } from "@/lib/types";
 import {
   FIXED_COST_CATEGORY_NAME,
+  isConfidentialCategory,
   isFixedCostCategory,
   scheduleKindLabel,
 } from "@/lib/types";
@@ -17,6 +20,8 @@ type Props = {
   accounts: AssetAccount[];
   categories: DailySpendCategory[];
   loadError: string | null;
+  /** 指定した月に発生するものだけ一覧する。未指定なら全体 */
+  monthKey?: string;
 };
 
 export function ScheduledRulesPanel({
@@ -24,8 +29,14 @@ export function ScheduledRulesPanel({
   accounts,
   categories,
   loadError,
+  monthKey,
 }: Props) {
-  const expenseCategories = categories;
+  const expenseCategories = categories.filter(
+    (c) => !isConfidentialCategory(c.name),
+  );
+  const visible = monthKey
+    ? rules.filter((rule) => ruleOccursInMonth(rule, monthKey))
+    : rules;
   const fixed =
     categories.find((c) => isFixedCostCategory(c.name)) ??
     categories.find((c) => c.name === FIXED_COST_CATEGORY_NAME);
@@ -42,20 +53,64 @@ export function ScheduledRulesPanel({
         <EditPopover buttonLabel="取引を追加" title="取引を追加">
           <RuleForm
             accounts={accounts}
-            categories={expenseCategories}
-            defaultCategoryId={fixed?.id ?? categories[0]?.id ?? ""}
+            categories={categories}
+            defaultCategoryId={fixed?.id ?? expenseCategories[0]?.id ?? ""}
           />
         </EditPopover>
       </div>
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}
-      {rules.length === 0 ? (
-        <p className="text-sm text-muted">登録された取引はまだありません。</p>
-      ) : (
+      {monthKey ? (
+        <p className="text-xs text-muted">
+          この一覧は表示中の月に発生するものだけです。{" "}
+          <Link href="/schedules" className="text-accent underline-offset-2 hover:underline">
+            取引登録で全体を見る
+          </Link>
+        </p>
+      ) : null}
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted">
+          {monthKey
+            ? "この月に発生する取引はありません。"
+            : "登録された取引はまだありません。"}
+        </p>
+      ) : monthKey ? (
         <details className="rounded-lg border border-line/70 bg-white/60">
           <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
-            登録一覧（{rules.length}件）
+            登録一覧（この月 {visible.length}件）
           </summary>
-          <ul className="divide-y divide-line/70 border-t border-line/70">
+          <RuleList
+            rules={visible}
+            accounts={accounts}
+            categories={categories}
+          />
+        </details>
+      ) : (
+        <div className="rounded-lg border border-line/70 bg-white/60">
+          <p className="border-b border-line/70 px-3 py-2.5 text-sm font-medium">
+            登録一覧（{visible.length}件）
+          </p>
+          <RuleList
+            rules={visible}
+            accounts={accounts}
+            categories={categories}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RuleList({
+  rules,
+  accounts,
+  categories,
+}: {
+  rules: ScheduledRule[];
+  accounts: AssetAccount[];
+  categories: DailySpendCategory[];
+}) {
+  return (
+          <ul className="divide-y divide-line/70">
           {rules.map((rule) => {
             const account = accounts.find((a) => a.id === rule.asset_account_id);
             return (
@@ -86,7 +141,7 @@ export function ScheduledRulesPanel({
                 <EditPopover buttonLabel="編集" title="取引を編集">
                   <RuleForm
                     accounts={accounts}
-                    categories={expenseCategories}
+                    categories={categories}
                     rule={rule}
                   />
                 </EditPopover>
@@ -95,10 +150,15 @@ export function ScheduledRulesPanel({
             );
           })}
           </ul>
-        </details>
-      )}
-    </section>
   );
+}
+
+function endOfMonthKey(iso: string): string {
+  const month = iso.slice(0, 7);
+  const [year, monthNumber] = month.split("-").map(Number);
+  if (!year || !monthNumber) return iso;
+  const last = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return `${month}-${String(last).padStart(2, "0")}`;
 }
 
 function DeleteRuleButton({ id }: { id: string }) {
@@ -138,7 +198,13 @@ function RuleForm({
   const [pending, startTransition] = useTransition();
   const [flow, setFlow] = useState(rule?.flow ?? "expense");
   const today = format(new Date(), "yyyy-MM-dd");
+  const [startDate, setStartDate] = useState(rule?.start_date ?? today);
+  const [endDate, setEndDate] = useState(rule?.end_date ?? "");
+  const sameMonth =
+    Boolean(rule?.end_date) && rule?.end_date?.slice(0, 7) === rule?.start_date.slice(0, 7);
+  const [thisMonthOnly, setThisMonthOnly] = useState(sameMonth);
   const activeAccounts = accounts.filter((a) => !a.archived);
+  const monthOnlyEnd = endOfMonthKey(startDate);
 
   return (
     <form
@@ -231,7 +297,8 @@ function RuleForm({
             name="start_date"
             type="date"
             required
-            defaultValue={rule?.start_date ?? today}
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
             className="rounded-md border border-line bg-white px-3 py-2"
           />
         </label>
@@ -240,8 +307,10 @@ function RuleForm({
           <input
             name="end_date"
             type="date"
-            defaultValue={rule?.end_date ?? ""}
-            className="rounded-md border border-line bg-white px-3 py-2"
+            value={thisMonthOnly ? monthOnlyEnd : endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            readOnly={thisMonthOnly}
+            className="rounded-md border border-line bg-white px-3 py-2 read-only:bg-white/70"
           />
         </label>
       </div>
@@ -267,7 +336,13 @@ function RuleForm({
             defaultValue={rule?.category_id ?? defaultCategoryId ?? ""}
             className="rounded-md border border-line bg-white px-3 py-2"
           >
-            {categories.map((category) => (
+            {categories
+              .filter(
+                (category) =>
+                  !isConfidentialCategory(category.name) ||
+                  category.id === rule?.category_id,
+              )
+              .map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
@@ -275,8 +350,24 @@ function RuleForm({
           </select>
         </label>
       ) : null}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={thisMonthOnly}
+          onChange={(event) => setThisMonthOnly(event.target.checked)}
+        />
+        <span>
+          この月だけ
+          <span className="mt-0.5 block text-[11px] text-muted">
+            開始月の末日で終わります。先の月には入りません。
+          </span>
+        </span>
+      </label>
       <p className="text-[11px] text-muted">
-        今月以降、約24か月分がその日の記録になります。手で直した月は、この金額を変えても上書きしません。
+        {thisMonthOnly
+          ? "開始月のその日だけが記録になります。"
+          : "今月以降、約24か月分がその日の記録になります。手で直した月は、この金額を変えても上書きしません。"}
       </p>
       <button
         type="submit"
