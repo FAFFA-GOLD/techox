@@ -12,6 +12,7 @@ import {
   fetchBalanceMovementsSince,
   fetchDailyScratchpad,
   fetchDailySpendEntriesInRange,
+  fetchLunchMenuItems,
   fetchDailySpendHolidaysInRange,
   fetchDailySpendMakikoOffsInRange,
   fetchScheduledRules,
@@ -71,7 +72,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   const todayMonthEnd = `${todayMonth}-${String(new Date(Date.UTC(ty, tm, 0)).getUTCDate()).padStart(2, "0")}`;
   const remainderLabel = `${ty}年${tm}月1日〜${tm}月${Number(todayMonthEnd.slice(8))}日`;
 
-  const [entries, holidays, makikoOffs, scratchpad, rules, movements, todayMonthEntries] =
+  const [entries, holidays, makikoOffs, scratchpad, rules, movements, todayMonthEntries, lunchMenuItems] =
     await Promise.all([
       fetchDailySpendEntriesInRange(start, end),
       fetchDailySpendHolidaysInRange(start, end),
@@ -84,6 +85,7 @@ export default async function CalendarPage({ searchParams }: Props) {
       monthKey === todayMonth
         ? Promise.resolve(null)
         : fetchDailySpendEntriesInRange(`${todayMonth}-01`, todayMonthEnd),
+      fetchLunchMenuItems(),
     ]);
   const remainderEntries = todayMonthEntries ?? entries;
 
@@ -131,6 +133,7 @@ export default async function CalendarPage({ searchParams }: Props) {
         scheduleError={scheduleError}
         remainderEntries={remainderEntries}
         remainderLabel={remainderLabel}
+        lunchMenuItems={lunchMenuItems}
       />
     </div>
   );
