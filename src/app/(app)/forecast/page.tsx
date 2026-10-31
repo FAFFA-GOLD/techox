@@ -19,7 +19,7 @@ import {
 } from "@/lib/data";
 import { todayKeyInTimeZone } from "@/lib/dates";
 import { payPeriodsFrom } from "@/lib/pay-period";
-import { isPocketSpendCategory, isTransportCategory } from "@/lib/types";
+import { isPocketSpendCategory, isSavingsAccountName, isTransportCategory } from "@/lib/types";
 
 export default async function ForecastPage() {
   const today = todayKeyInTimeZone();
@@ -50,6 +50,9 @@ export default async function ForecastPage() {
   const balances = buildAccountBalanceViews(accounts, snapshots, movements, today);
   const known = balances.filter((row) => row.balance != null);
   const opening = known.reduce((sum, row) => sum + (row.balance ?? 0), 0);
+  const savings = known
+    .filter((row) => isSavingsAccountName(row.name))
+    .reduce((sum, row) => sum + (row.balance ?? 0), 0);
   const categoryName = new Map(categories.map((category) => [category.id, category.name]));
   const current = periods[0];
   let spentDaily = 0;
@@ -104,6 +107,7 @@ export default async function ForecastPage() {
   return (
     <CashflowClient
       rows={rows}
+      savings={savings}
       base={base}
       savedBase={Boolean(plan.base)}
       loadError={
