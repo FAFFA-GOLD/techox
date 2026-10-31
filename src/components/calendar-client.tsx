@@ -845,7 +845,7 @@ export function CalendarClient({
         />
       ) : (
       <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_1fr]">
-        <div className="grid gap-4">
+        <div className="order-1 grid gap-4 lg:col-start-1 lg:row-start-1">
           <div className="overflow-hidden rounded-xl border border-line/80 bg-surface">
           <div className="flex flex-wrap items-center gap-2 border-b border-line/70 bg-white/70 px-2 py-1.5 text-[10px] text-muted">
             <span className="rounded border border-[#d97706] bg-[#fffbeb] px-1 py-0.5 font-semibold text-[#b45309]">
@@ -987,7 +987,20 @@ export function CalendarClient({
             })}
           </div>
           </div>
+        </div>
 
+        <div className="order-2 grid gap-4 self-start lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          <DayPanel
+            date={selectedDate}
+            categories={categories}
+            entries={dayEntries}
+            isHoliday={selectedIsHoliday}
+            isMakikoOff={selectedIsMakikoOff}
+            accounts={accounts}
+          />
+        </div>
+
+        <div className="order-3 grid gap-4 lg:col-start-1 lg:row-start-2">
           <div className="grid gap-2">
             <p className="text-xs font-medium text-muted">便利ツール</p>
             <div className="flex flex-wrap gap-2">
@@ -1018,17 +1031,6 @@ export function CalendarClient({
           ) : (
             <LunchCalcClient initialItems={lunchMenuItems} />
           )}
-        </div>
-
-        <div className="grid gap-4 self-start">
-          <DayPanel
-            date={selectedDate}
-            categories={categories}
-            entries={dayEntries}
-            isHoliday={selectedIsHoliday}
-            isMakikoOff={selectedIsMakikoOff}
-            accounts={accounts}
-          />
         </div>
       </div>
       )}
