@@ -2,6 +2,7 @@ import { CashflowClient } from "@/components/cashflow-client";
 import { buildAccountBalanceViews } from "@/lib/account-display";
 import {
   buildCashflowRows,
+  CASHFLOW_HISTORY_CUTOFF,
   defaultCashflowPlan,
   type CashflowEvent,
 } from "@/lib/cashflow-forecast";
@@ -37,7 +38,12 @@ export default async function ForecastPage() {
   const [movements, rules, occurrences, skips, plan] = await Promise.all([
     earliest ? fetchBalanceMovementsSince(earliest, today) : Promise.resolve([]),
     fetchScheduledRules(),
-    fetchDailySpendEntriesInRange(periods[0].start, periods[periods.length - 1].end),
+    fetchDailySpendEntriesInRange(
+      periods[0].start < CASHFLOW_HISTORY_CUTOFF
+        ? CASHFLOW_HISTORY_CUTOFF
+        : periods[0].start,
+      periods[periods.length - 1].end,
+    ),
     fetchScheduledRuleSkips(),
     fetchCashflowPlan(),
   ]);
@@ -52,6 +58,7 @@ export default async function ForecastPage() {
     const name = entry.category_id ? categoryName.get(entry.category_id) ?? null : null;
     if (
       current &&
+      entry.date >= CASHFLOW_HISTORY_CUTOFF &&
       entry.date >= current.start &&
       entry.date <= today &&
       entry.kind !== "income"
