@@ -90,8 +90,6 @@ type Props = {
   monthKey: string; // yyyy-MM
   categories: DailySpendCategory[];
   entries: DailySpendEntry[];
-  compareMonth: string;
-  compareEntries: DailySpendEntry[];
   holidays: DailySpendHoliday[];
   makikoOffs: DailySpendMakikoOff[];
   selectedDate: string;
@@ -110,10 +108,9 @@ type Props = {
 
 function calUrl(
   monthKey: string,
-  opts: { view?: ViewMode; date?: string; category?: string; compare?: string },
+  opts: { view?: ViewMode; date?: string; category?: string },
 ): string {
   const p = new URLSearchParams({ month: monthKey });
-  if (opts.compare) p.set("compare", opts.compare);
   if (opts.view === "list") {
     p.set("view", "list");
     if (opts.category) p.set("category", opts.category);
@@ -219,8 +216,6 @@ export function CalendarClient({
   monthKey,
   categories,
   entries,
-  compareMonth,
-  compareEntries,
   holidays,
   makikoOffs,
   selectedDate,
@@ -465,11 +460,9 @@ export function CalendarClient({
               ? calUrl(prev, {
                   view: "list",
                   category: activeListCategoryId,
-                  compare: compareMonth,
                 })
               : calUrl(prev, {
                   date: defaultDateForMonth(prev),
-                  compare: compareMonth,
                 })
           }
           aria-label="前月へ"
@@ -484,7 +477,7 @@ export function CalendarClient({
           {monthKey === todayMonth && selectedDate !== todayStr ? (
             <p className="mt-1">
               <Link
-                href={calUrl(monthKey, { date: todayStr, compare: compareMonth })}
+                href={calUrl(monthKey, { date: todayStr })}
                 className="text-xs text-accent hover:underline"
               >
                 今日（{todayStr}）へ
@@ -512,11 +505,9 @@ export function CalendarClient({
               ? calUrl(next, {
                   view: "list",
                   category: activeListCategoryId,
-                  compare: compareMonth,
                 })
               : calUrl(next, {
                   date: defaultDateForMonth(next),
-                  compare: compareMonth,
                 })
           }
           aria-label="翌月へ"
@@ -524,44 +515,6 @@ export function CalendarClient({
         >
           翌月 →
         </Link>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <form action="/calendar" className="flex items-center gap-2">
-          <input type="hidden" name="month" value={monthKey} />
-          {view === "list" ? <input type="hidden" name="view" value="list" /> : null}
-          {view === "list" ? (
-            <input type="hidden" name="category" value={activeListCategoryId} />
-          ) : (
-            <input type="hidden" name="date" value={selectedDate} />
-          )}
-          <label className="text-xs text-muted">比較月</label>
-          <input
-            type="month"
-            name="compare"
-            min="2026-08"
-            defaultValue={compareMonth}
-            className="rounded-md border border-line bg-white px-2 py-1.5 text-xs"
-          />
-          <button
-            type="submit"
-            className="rounded-md border border-line bg-white/80 px-3 py-1.5 text-xs text-muted hover:text-ink"
-          >
-            比較
-          </button>
-        </form>
-        {compareMonth ? (
-          <Link
-            href={calUrl(monthKey, {
-              view,
-              date: selectedDate,
-              category: activeListCategoryId,
-            })}
-            className="rounded-md border border-line bg-white/80 px-3 py-2 text-xs text-muted hover:text-ink"
-          >
-            比較解除
-          </Link>
-        ) : null}
       </div>
 
       <AccountBalanceStrip
@@ -807,8 +760,6 @@ export function CalendarClient({
         entries={entries}
         holidayDates={holidays.map((h) => h.date)}
         makikoOffDates={makikoOffs.map((m) => m.date)}
-        compareMonth={compareMonth}
-        compareEntries={compareEntries}
       />
 
       <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_1fr]">
@@ -872,7 +823,7 @@ export function CalendarClient({
                   key={key}
                   type="button"
                   onClick={() =>
-                    router.push(calUrl(monthKey, { date: key, compare: compareMonth }))
+                    router.push(calUrl(monthKey, { date: key }))
                   }
                   className={`min-h-14 border-b border-r border-line/40 px-0.5 py-1 text-left transition sm:min-h-[4.5rem] sm:px-1.5 sm:py-1.5 ${
                     selected ? "bg-accent/10 ring-1 ring-inset ring-accent/40" : ""

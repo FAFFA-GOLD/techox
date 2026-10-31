@@ -25,7 +25,6 @@ type Props = {
     date?: string;
     view?: string;
     category?: string;
-    compare?: string;
   }>;
 };
 
@@ -37,10 +36,6 @@ export default async function CalendarPage({ searchParams }: Props) {
   const selectedDate =
     params.date ?? defaultSelectedDateForMonth(monthKey);
   const view = params.view === "list" ? "list" : "calendar";
-  const compareMonth =
-    params.compare && /^\d{4}-\d{2}$/.test(params.compare) && params.compare >= "2026-08"
-      ? params.compare
-      : "";
 
   const start = `${monthKey}-01`;
   const [y, m] = monthKey.split("-").map(Number);
@@ -90,15 +85,6 @@ export default async function CalendarPage({ searchParams }: Props) {
     ]);
   const remainderEntries = todayMonthEntries ?? entries;
 
-  let compareEntries = entries;
-  if (compareMonth && compareMonth !== monthKey) {
-    const compareStart = `${compareMonth}-01`;
-    const [cy, cm] = compareMonth.split("-").map(Number);
-    const compareLastDay = new Date(cy, cm, 0).getDate();
-    const compareEnd = `${compareMonth}-${String(compareLastDay).padStart(2, "0")}`;
-    compareEntries = await fetchDailySpendEntriesInRange(compareStart, compareEnd);
-  }
-
   const balances = buildAccountBalanceViews(
     accounts,
     snapshots,
@@ -117,8 +103,6 @@ export default async function CalendarPage({ searchParams }: Props) {
         monthKey={monthKey}
         categories={categories}
         entries={entries}
-        compareMonth={compareMonth}
-        compareEntries={compareEntries}
         holidays={holidays}
         makikoOffs={makikoOffs}
         selectedDate={selectedDate}

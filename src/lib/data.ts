@@ -319,6 +319,17 @@ async function foldEarphoneSavingsIntoHdd(
     .eq("id", seed.id);
 }
 
+/** 旅行の貯金は総資産から外す。残高は手動で別の貯金へ移す。 */
+async function archiveTravelSavings(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rows: { id: string; name: string; archived?: boolean }[],
+): Promise<void> {
+  const travel = rows.find((row) => row.name === "旅行" && !row.archived);
+  if (!travel) return;
+  await supabase.from("asset_accounts").update({ archived: true }).eq("id", travel.id);
+  travel.archived = true;
+}
+
 /** ドコモ / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
 export async function ensureWalletAccounts(): Promise<void> {
   const supabase = await createClient();
@@ -362,6 +373,7 @@ export async function ensureWalletAccounts(): Promise<void> {
 
   await mergeWalletAliases(supabase, user.id, rows);
   await foldEarphoneSavingsIntoHdd(supabase, user.id, rows);
+  await archiveTravelSavings(supabase, rows);
 
   const { data: savingsSnaps } = await supabase
     .from("account_balance_snapshots")
