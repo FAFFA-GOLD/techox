@@ -51,6 +51,18 @@ function labelOf(start: string, end: string): string {
   return `${fmt(start)}〜${fmt(end)}`;
 }
 
+/** date を含む給与期から count 期分。 */
+export function payPeriodsFrom(date: string, count: number): PayPeriod[] {
+  const periods: PayPeriod[] = [];
+  let cursor = date;
+  while (periods.length < count) {
+    const period = payPeriodContaining(cursor);
+    periods.push(period);
+    cursor = period.nextPayday;
+  }
+  return periods;
+}
+
 /** date（yyyy-MM-dd）を含む給与期 */
 export function payPeriodContaining(date: string): PayPeriod {
   const [year, month] = date.split("-").map(Number);

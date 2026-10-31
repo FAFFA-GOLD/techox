@@ -1881,3 +1881,74 @@ export async function deleteScheduledRule(formData: FormData) {
   revalidateMoney();
   return { ok: true as const };
 }
+
+function parsePlanYen(raw: FormDataEntryValue | null, allowNegative: boolean): number | null {
+  const n = Number(String(raw ?? "").replace(/[,，]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  if (!allowNegative && n < 0) return null;
+  return Math.round(n);
+}
+
+function cashflowPlanError(message: string): string {
+  if (message.includes("cashflow_plan")) {
+    return "キャッシュフローには supabase/migrations/021_cashflow_plan.sql の実行が必要です";
+  }
+  return migrationHint(message) ?? message;
+}
+
+export async function saveCashflowPlan(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const daily = parsePlanYen(formData.get("daily_budget"), false);
+  const transport = parsePlanYen(formData.get("transport_budget"), false);
+  const adjustment = parsePlanYen(formData.get("adjustment"), true);
+  if (daily == null || transport == null || adjustment == null) {
+    return { error: "金額を確認してください" };
+  }
+  const { error } = await supabase.from("cashflow_plan").upsert(
+    {
+      user_id: user.id,
+      daily_budget: daily,
+      transport_budget: transport,
+      adjustment,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) return { error: cashflowPlanError(error.message) };
+  revalidateMoney();
+  return { ok: true as const };
+}
+
+export async function saveCashflowPeriod(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const periodStart = String(formData.get("period_start") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) return { error: "期間が不正です" };
+  if (String(formData.get("reset") ?? "") === "1") {
+    const { error } = await supabase
+      .from("cashflow_plan_periods")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("period_start", periodStart);
+    if (error) return { error: cashflowPlanError(error.message) };
+    revalidateMoney();
+    return { ok: true as const };
+  }
+  const daily = parsePlanYen(formData.get("daily_budget"), false);
+  const transport = parsePlanYen(formData.get("transport_budget"), false);
+  const adjustment = parsePlanYen(formData.get("adjustment"), true);
+  if (daily == null || transport == null || adjustment == null) {
+    return { error: "金額を確認してください" };
+  }
+  const { error } = await supabase.from("cashflow_plan_periods").upsert(
+    {
+      user_id: user.id,
+      period_start: periodStart,
+      daily_budget: daily,
+      transport_budget: transport,
+      adjustment,
+    },
+    { onConflict: "user_id,period_start" },
+  );
+  if (error) return { error: cashflowPlanError(error.message) };
+  revalidateMoney();
+  return { ok: true as const };
+}
