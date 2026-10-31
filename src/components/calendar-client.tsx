@@ -72,7 +72,6 @@ import {
 } from "@/lib/types";
 import { DailySpendCategoryList } from "@/components/daily-spend-category-list";
 import { DailySpendCharts } from "@/components/daily-spend-charts";
-import { ConfidentialExpensePanel } from "@/components/confidential-expense-panel";
 import { ScratchpadPanel } from "@/components/scratchpad-panel";
 
 type ViewMode = "calendar" | "list";
@@ -160,7 +159,12 @@ function ProjectedRemainder({
 
   return (
     <section className="rounded-xl border border-line/80 bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">今月予定残金</p>
+      <p className="text-xs uppercase tracking-wide text-muted">
+        総資産
+        <span className="ml-1 text-[10px] font-normal normal-case tracking-normal">
+          （今月予定残金）
+        </span>
+      </p>
       <p className="mt-1 text-xs text-muted">
         {remainderLabel}（この月の1日〜末日。翌月以降の予定は入れない）
       </p>
@@ -276,17 +280,8 @@ export function CalendarClient({
   const transportCategoryId = categories.find((c) =>
     isTransportCategory(c.name),
   )?.id;
-  const confidentialCategoryId = categories.find((c) =>
-    isConfidentialCategory(c.name),
-  )?.id;
   const transportTotal = transportCategoryId
     ? (spentByCategoryId.get(transportCategoryId) ?? 0)
-    : 0;
-  const confidentialTotal = confidentialCategoryId
-    ? (spentByCategoryId.get(confidentialCategoryId) ?? 0)
-    : 0;
-  const confidentialEntryCount = confidentialCategoryId
-    ? entries.filter((e) => e.category_id === confidentialCategoryId).length
     : 0;
   const paceExcludedIds = useMemo(() => {
     const ids = new Set(excludedCategoryIds);
@@ -296,10 +291,15 @@ export function CalendarClient({
     return ids;
   }, [categories, excludedCategoryIds]);
 
-  const monthIncome = entries.reduce((s, e) => {
-    if (!isIncomeEntry(e)) return s;
-    return s + e.amount;
-  }, 0);
+  const incomeLines = entries
+    .filter((e) => isIncomeEntry(e))
+    .slice()
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        (a.memo ?? "").localeCompare(b.memo ?? "", "ja"),
+    );
+  const monthIncome = incomeLines.reduce((s, e) => s + e.amount, 0);
   const monthExpenseAll = entries.reduce((s, e) => {
     if (isIncomeEntry(e)) return s;
     return s + e.amount;
@@ -566,7 +566,24 @@ export function CalendarClient({
             <p className="mt-2 text-2xl font-bold tabular-nums text-income">
               {formatYen(monthIncome)}
             </p>
-            <p className="mt-1 text-xs text-muted">この月の収入（取引を含む）</p>
+            <p className="mt-1 text-xs text-muted">
+              表示中の月の収入行を足した金額です
+            </p>
+            {incomeLines.length > 0 ? (
+              <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto text-xs text-muted">
+                {incomeLines.map((line) => (
+                  <li key={line.id} className="flex justify-between gap-2">
+                    <span className="min-w-0 truncate">
+                      {line.date.slice(5).replace("-", "/")}{" "}
+                      {line.memo || "収入"}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-income">
+                      {formatYen(line.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div className="rounded-xl border border-expense/35 bg-expense/10 p-4">
             <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
@@ -574,7 +591,7 @@ export function CalendarClient({
               {formatYen(monthExpenseAll)}
             </p>
             <p className="mt-1 text-xs text-muted">
-              交通費・固定費・機密費を含むこの月の支出
+              交通費・固定費を含むこの月の支出
             </p>
           </div>
           <div className="rounded-xl border border-accent/40 bg-accent/10 p-4">
@@ -606,9 +623,6 @@ export function CalendarClient({
               </span>
               <span className="text-sm tabular-nums text-muted">
                 交通費 {formatYen(transportTotal)}
-                <span className="ml-1">
-                  （月の合計支出＋機密費 {formatYen(monthTotal + confidentialTotal)}）
-                </span>
               </span>
             </p>
             <p className="mt-1 text-sm tabular-nums text-muted">
@@ -616,7 +630,7 @@ export function CalendarClient({
               <span className="ml-1 text-xs">（参考・予算外）</span>
             </p>
             <p className="mt-1 text-xs text-muted">
-              {monthEntryCount} 件 · 交通費・機密費・固定費を除く小遣いの合計
+              {monthEntryCount} 件 · 交通費・固定費を除く小遣いの合計
             </p>
           </div>
         </div>
@@ -712,10 +726,6 @@ export function CalendarClient({
           ))}
         </div>
 
-        <ConfidentialExpensePanel
-          monthSpent={confidentialTotal}
-          entryCount={confidentialEntryCount}
-        />
       </section>
 
       <ScheduledRulesPanel
@@ -723,6 +733,7 @@ export function CalendarClient({
         accounts={accounts}
         categories={categories}
         loadError={scheduleError}
+        monthKey={monthKey}
       />
 
       <DailySpendCharts
@@ -738,7 +749,7 @@ export function CalendarClient({
       {view === "list" ? (
         <DailySpendCategoryList
           monthKey={monthKey}
-          categories={categories}
+          categories={categories.filter((c) => !isConfidentialCategory(c.name))}
           entries={entries}
           categoryId={activeListCategoryId}
           accounts={accounts}
@@ -1144,7 +1155,10 @@ function EntryForm({
   const [formKey, setFormKey] = useState(0);
   const [pending, startTransition] = useTransition();
   const quickCategories = categories.filter(
-    (c) => !isTransportCategory(c.name) && !isFixedCostCategory(c.name),
+    (c) =>
+      !isTransportCategory(c.name) &&
+      !isFixedCostCategory(c.name) &&
+      !isConfidentialCategory(c.name),
   );
   const transportCategory = categories.find((c) => isTransportCategory(c.name));
   const initialCategoryId =

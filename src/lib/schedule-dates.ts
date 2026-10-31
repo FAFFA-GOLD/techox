@@ -43,6 +43,16 @@ export function scheduleOccurrenceDates(
   return dates;
 }
 
+/** monthKey（yyyy-MM）に、その取引の発生日が1日でもあるか。 */
+export function ruleOccursInMonth(
+  rule: ScheduleDateInput,
+  monthKey: string,
+): boolean {
+  return scheduleOccurrenceDates(rule, monthKey, 1).some((date) =>
+    date.startsWith(monthKey),
+  );
+}
+
 /** 生成を始める月。開始が未来ならその月、そうでなければ今月。過去月は埋めない。 */
 export function scheduleWindowStart(startDate: string, today = new Date()): string {
   const todayMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
