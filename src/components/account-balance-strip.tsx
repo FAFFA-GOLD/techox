@@ -188,7 +188,7 @@ function BankWatermark() {
     <svg
       aria-hidden
       viewBox="0 0 64 64"
-      className="pointer-events-none absolute -right-1 -bottom-2 h-16 w-16 text-accent opacity-25"
+      className="pointer-events-none absolute -bottom-2 -left-1 h-16 w-16 text-accent opacity-25"
     >
       <path
         fill="currentColor"
