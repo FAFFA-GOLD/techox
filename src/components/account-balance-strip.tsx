@@ -143,18 +143,19 @@ function BalanceRow({
         {accounts.map((account) => (
           <article
             key={account.id}
-            className="flex items-start justify-between gap-1.5 rounded-xl border border-line/80 bg-surface px-2.5 py-2"
+            className="relative flex items-start justify-between gap-1.5 overflow-hidden rounded-xl border border-line/80 bg-surface px-2.5 py-2"
           >
-            <div className="min-w-0">
+            {title === "銀行" ? <BankWatermark /> : null}
+            <div className="relative min-w-0">
               <p className="truncate text-xs text-muted">{account.name}</p>
               <p className="mt-0.5 text-base font-bold tabular-nums sm:text-lg">
                 {account.balance == null ? "未登録" : formatYen(account.balance)}
               </p>
               <p className="mt-0.5 text-[10px] leading-snug text-muted">
-                {account.asOf ? `${account.asOf} 以降〜今日` : "残高を登録"}
+                {account.asOf ? `${account.asOf}更新` : "残高を登録"}
               </p>
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="relative flex shrink-0 flex-col items-end gap-1">
               <EditPopover
                 buttonLabel="変更"
                 title={`${account.name}の残高`}
@@ -179,6 +180,21 @@ function BalanceRow({
         ))}
       </div>
     </div>
+  );
+}
+
+function BankWatermark() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 64 64"
+      className="pointer-events-none absolute -right-1 -bottom-2 h-16 w-16 text-accent opacity-25"
+    >
+      <path
+        fill="currentColor"
+        d="M32 6 6 22h52L32 6zm-22 18h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zM4 46h56v4H4v-4zm2 6h52v4H6v-4z"
+      />
+    </svg>
   );
 }
 
