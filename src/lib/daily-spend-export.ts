@@ -7,6 +7,7 @@ import {
   countRemainingWorkingWeekdaysInMonth,
   isConfidentialCategory,
   isExcludedFromMonthTotalCategory,
+  isFixedCostCategory,
   isLunchCategory,
   isMiscGroupCategory,
   isPocketBudgetCategory,
@@ -142,6 +143,8 @@ export function buildDailySpendExportModel(
 
   const dailyMap = new Map<string, { total: number; count: number }>();
   for (const e of sorted) {
+    if (!e.category_id || e.kind === "income") continue;
+    if (isFixedCostCategory(e.daily_spend_categories?.name ?? "")) continue;
     const cur = dailyMap.get(e.date) ?? { total: 0, count: 0 };
     cur.total += e.amount;
     cur.count += 1;
