@@ -23,7 +23,10 @@ import {
   updateDailySpendCategory,
   updateDailySpendEntry,
 } from "@/app/actions";
-import { AccountBalanceStrip } from "@/components/account-balance-strip";
+import {
+  AccountBalanceStrip,
+  DepartmentShortfallWarnings,
+} from "@/components/account-balance-strip";
 import { EditPopover } from "@/components/edit-popover";
 import {
   defaultAccountId,
@@ -117,6 +120,12 @@ function calUrl(
     p.set("date", opts.date);
   }
   return `/calendar?${p.toString()}`;
+}
+
+function monthEndKey(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${monthKey}-${String(last).padStart(2, "0")}`;
 }
 
 function ProjectedRemainder({
@@ -434,8 +443,20 @@ export function CalendarClient({
     categories[0]?.id ??
     "";
 
+  const todayMonthEnd = monthEndKey(todayMonth);
+  const laterMonthEnd = monthKey > todayMonth ? monthEndKey(monthKey) : null;
+  const laterEntries = monthKey > todayMonth ? entries : [];
+
   return (
     <div className="grid gap-6">
+      <DepartmentShortfallWarnings
+        balances={balances}
+        monthEntries={remainderEntries}
+        laterEntries={laterEntries}
+        today={todayStr}
+        monthEnd={todayMonthEnd}
+        laterMonthEnd={laterMonthEnd}
+      />
       <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4">
         <Link
           href={
@@ -566,7 +587,14 @@ export function CalendarClient({
         ) : null}
       </div>
 
-      <AccountBalanceStrip balances={balances} />
+      <AccountBalanceStrip
+        balances={balances}
+        monthEntries={remainderEntries}
+        laterEntries={laterEntries}
+        today={todayStr}
+        monthEnd={todayMonthEnd}
+        laterMonthEnd={laterMonthEnd}
+      />
 
       <ProjectedRemainder
         balances={balances}

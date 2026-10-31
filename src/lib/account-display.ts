@@ -8,6 +8,59 @@ export type BalanceMovement = {
   asset_account_id: string | null;
 };
 
+export type AccountForecastLine = {
+  label: string;
+  amount: number;
+  kind: "income" | "expense";
+};
+
+export type AccountForecastDay = {
+  date: string;
+  lines: AccountForecastLine[];
+  balanceAfter: number;
+};
+
+export function forecastAccountDays(
+  accountId: string,
+  opening: number,
+  entries: {
+    date: string;
+    amount: number;
+    kind?: string;
+    memo: string | null;
+    asset_account_id?: string | null;
+  }[],
+  afterDate: string,
+  throughDate: string,
+): AccountForecastDay[] {
+  const asYen = (value: unknown) => {
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const grouped = new Map<string, AccountForecastLine[]>();
+  for (const entry of entries) {
+    const date = String(entry.date).slice(0, 10);
+    if (entry.asset_account_id !== accountId) continue;
+    if (date <= afterDate || date > throughDate) continue;
+    const kind = entry.kind === "income" ? "income" : "expense";
+    const lines = grouped.get(date) ?? [];
+    lines.push({
+      label: entry.memo?.trim() || (kind === "income" ? "収入" : "支出"),
+      amount: asYen(entry.amount),
+      kind,
+    });
+    grouped.set(date, lines);
+  }
+  let balance = opening;
+  return [...grouped.keys()].sort().map((date) => {
+    const lines = grouped.get(date) ?? [];
+    for (const line of lines) {
+      balance += line.kind === "income" ? line.amount : -line.amount;
+    }
+    return { date, lines, balanceAfter: balance };
+  });
+}
+
 export type AccountBalanceView = {
   id: string;
   name: string;
