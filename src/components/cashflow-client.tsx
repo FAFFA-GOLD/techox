@@ -30,6 +30,7 @@ export function CashflowClient({
       <span className="ml-1 font-normal text-muted">（{formatYen(withSavings)}）</span>
     </>
   );
+  const yearGroups = groupRowsByYear(rows);
 
   return (
     <div className="grid gap-4">
@@ -57,6 +58,37 @@ export function CashflowClient({
         </div>
       </section>
       <BasePlanForm base={base} saved={savedBase} />
+      {yearGroups.length > 0 ? (
+        <section className="grid gap-2 sm:grid-cols-3">
+          {yearGroups.map((group) => {
+            const closing = group.rows[group.rows.length - 1];
+            const lowestInYear = group.rows.reduce(
+              (min, row) => Math.min(min, row.ending),
+              Number.POSITIVE_INFINITY,
+            );
+            return (
+              <a
+                key={group.year}
+                href={`#cashflow-year-${group.year}`}
+                className="rounded-xl border border-line/80 bg-surface p-3 hover:border-accent"
+              >
+                <p className="text-sm font-bold">{group.year}年</p>
+                <p className="mt-1 text-[11px] text-muted">この年の最後の期末</p>
+                <p
+                  className={`text-sm font-semibold tabular-nums ${
+                    closing.ending - savings < 0 ? "text-expense" : ""
+                  }`}
+                >
+                  {pair(closing.ending)}
+                </p>
+                <p className="mt-1 text-[11px] text-muted">
+                  この年の最低 {formatYen(lowestInYear - savings)}（{formatYen(lowestInYear)}）
+                </p>
+              </a>
+            );
+          })}
+        </section>
+      ) : null}
       <div className="overflow-x-auto rounded-xl border border-line/80">
         <table className="min-w-[52rem] w-full text-left text-sm">
           <thead className="bg-white/80 text-xs text-muted">
@@ -73,7 +105,16 @@ export function CashflowClient({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {yearGroups.flatMap((group) => [
+              <tr key={`year-${group.year}`} id={`cashflow-year-${group.year}`} className="bg-[#eef5f3]">
+                <td colSpan={9} className="px-3 py-2 text-sm font-bold text-accent-deep">
+                  {group.year}年
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    {group.rows.length}期
+                  </span>
+                </td>
+              </tr>,
+              ...group.rows.map((row) => (
               <tr
                 key={row.period.start}
                 className={row.ending < 0 ? "bg-red-50/80" : "bg-white/70"}
@@ -107,12 +148,24 @@ export function CashflowClient({
                   </EditPopover>
                 </td>
               </tr>
-            ))}
+              )),
+            ])}
           </tbody>
         </table>
       </div>
     </div>
   );
+}
+
+function groupRowsByYear(rows: CashflowRow[]): { year: string; rows: CashflowRow[] }[] {
+  const groups: { year: string; rows: CashflowRow[] }[] = [];
+  for (const row of rows) {
+    const year = row.period.start.slice(0, 4);
+    const current = groups[groups.length - 1];
+    if (!current || current.year !== year) groups.push({ year, rows: [row] });
+    else current.rows.push(row);
+  }
+  return groups;
 }
 
 function BasePlanForm({
