@@ -1,6 +1,5 @@
 import { CalendarClient } from "@/components/calendar-client";
 import { buildAccountBalanceViews } from "@/lib/account-display";
-import { payPeriodContaining } from "@/lib/pay-period";
 import {
   defaultSelectedDateForMonth,
   monthKeyInTimeZone,
@@ -67,9 +66,12 @@ export default async function CalendarPage({ searchParams }: Props) {
     })
     .filter((date): date is string => Boolean(date));
   const earliest = asOfDates.sort()[0];
-  const payPeriod = payPeriodContaining(today);
+  const todayMonth = today.slice(0, 7);
+  const [ty, tm] = todayMonth.split("-").map(Number);
+  const todayMonthEnd = `${todayMonth}-${String(new Date(Date.UTC(ty, tm, 0)).getUTCDate()).padStart(2, "0")}`;
+  const remainderLabel = `${ty}年${tm}月1日〜${tm}月${Number(todayMonthEnd.slice(8))}日`;
 
-  const [entries, holidays, makikoOffs, scratchpad, rules, movements, payPeriodEntries] =
+  const [entries, holidays, makikoOffs, scratchpad, rules, movements, todayMonthEntries] =
     await Promise.all([
       fetchDailySpendEntriesInRange(start, end),
       fetchDailySpendHolidaysInRange(start, end),
@@ -79,8 +81,11 @@ export default async function CalendarPage({ searchParams }: Props) {
       earliest
         ? fetchBalanceMovementsSince(earliest, today)
         : Promise.resolve([]),
-      fetchDailySpendEntriesInRange(payPeriod.start, payPeriod.end),
+      monthKey === todayMonth
+        ? Promise.resolve(null)
+        : fetchDailySpendEntriesInRange(`${todayMonth}-01`, todayMonthEnd),
     ]);
+  const remainderEntries = todayMonthEntries ?? entries;
 
   let compareEntries = entries;
   if (compareMonth && compareMonth !== monthKey) {
@@ -124,8 +129,8 @@ export default async function CalendarPage({ searchParams }: Props) {
         balances={balances}
         rules={rules}
         scheduleError={scheduleError}
-        payPeriod={payPeriod}
-        payPeriodEntries={payPeriodEntries}
+        remainderEntries={remainderEntries}
+        remainderLabel={remainderLabel}
       />
     </div>
   );
