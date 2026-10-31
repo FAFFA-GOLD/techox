@@ -186,66 +186,8 @@ export function LunchCalcClient({ initialItems }: Props) {
     <div className="grid gap-6">
       <section className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-bold">登録メニュー</h2>
-          <EditPopover buttonLabel="メニューを追加" title="メニューを追加">
-            <form
-              className="grid gap-2"
-              action={(fd) => {
-                runAction(createLunchMenuItem, fd);
-                ensureBandDefaults([
-                  ...initialItems,
-                  {
-                    id: "tmp",
-                    user_id: "",
-                    store_name: String(fd.get("store_name") ?? ""),
-                    item_name: String(fd.get("item_name") ?? ""),
-                    amount: Number(fd.get("amount") ?? 0),
-                    sort_order: 0,
-                    created_at: "",
-                    updated_at: "",
-                  },
-                ]);
-              }}
-            >
-              <label className="grid gap-1 text-sm">
-                <span className="text-muted">店</span>
-                <input
-                  name="store_name"
-                  required
-                  className="rounded-md border border-line bg-white px-3 py-2"
-                  placeholder="例: 駅前定食"
-                />
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="text-muted">名称</span>
-                <input
-                  name="item_name"
-                  required
-                  className="rounded-md border border-line bg-white px-3 py-2"
-                  placeholder="例: 日替わり定食"
-                />
-              </label>
-              <label className="grid gap-1 text-sm">
-                <span className="text-muted">金額（円）</span>
-                <input
-                  name="amount"
-                  type="number"
-                  min={1}
-                  required
-                  className="rounded-md border border-line bg-white px-3 py-2"
-                  placeholder="580"
-                />
-              </label>
-              {error ? <p className="text-sm text-expense">{error}</p> : null}
-              <button
-                type="submit"
-                disabled={pending}
-                className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-deep disabled:opacity-60"
-              >
-                {pending ? "追加中…" : "追加"}
-              </button>
-            </form>
-          </EditPopover>
+          <h2 className="text-lg font-bold">メニューを追加</h2>
+          <EditPopover buttonLabel="登録メニュー" title="登録メニュー" wide>
           <div className="flex flex-wrap gap-1">
             {(
               [
@@ -269,11 +211,10 @@ export function LunchCalcClient({ initialItems }: Props) {
               </button>
             ))}
           </div>
-        </div>
 
         {displayItems.length === 0 ? (
           <p className="rounded-xl border border-dashed border-line bg-white/50 px-4 py-8 text-center text-sm text-muted">
-            まだメニューがありません。メニューを追加から登録してください。
+            まだメニューがありません。
           </p>
         ) : (
           <ul className="divide-y divide-line/70 overflow-hidden rounded-xl border border-line/80 bg-surface">
@@ -423,6 +364,67 @@ export function LunchCalcClient({ initialItems }: Props) {
             })}
           </ul>
         )}
+          </EditPopover>
+        </div>
+        <form
+          className="grid gap-2 sm:grid-cols-2"
+          action={(fd) => {
+            runAction(createLunchMenuItem, fd);
+            ensureBandDefaults([
+              ...initialItems,
+              {
+                id: "tmp",
+                user_id: "",
+                store_name: String(fd.get("store_name") ?? ""),
+                item_name: String(fd.get("item_name") ?? ""),
+                amount: Number(fd.get("amount") ?? 0),
+                sort_order: 0,
+                created_at: "",
+                updated_at: "",
+              },
+            ]);
+          }}
+        >
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted">店</span>
+            <input
+              name="store_name"
+              required
+              className="rounded-md border border-line bg-white px-3 py-2"
+              placeholder="例: 駅前定食"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted">名称</span>
+            <input
+              name="item_name"
+              required
+              className="rounded-md border border-line bg-white px-3 py-2"
+              placeholder="例: 日替わり定食"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-muted">金額（円）</span>
+            <input
+              name="amount"
+              type="number"
+              min={1}
+              required
+              className="rounded-md border border-line bg-white px-3 py-2"
+              placeholder="580"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-deep disabled:opacity-60"
+            >
+              {pending ? "追加中…" : "追加"}
+            </button>
+          </div>
+          {error ? <p className="text-sm text-expense sm:col-span-2">{error}</p> : null}
+        </form>
       </section>
 
       <section className="grid gap-6 rounded-xl border border-line/80 bg-surface p-4">

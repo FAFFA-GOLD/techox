@@ -43,6 +43,9 @@ function addDays(iso: string, days: number): string {
   return `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}-${String(cursor.getUTCDate()).padStart(2, "0")}`;
 }
 
+/** これより前の入出金は旧履歴。キャッシュフローには入れない。 */
+export const CASHFLOW_HISTORY_CUTOFF = "2026-10-30";
+
 function inRange(date: string, start: string, end: string): boolean {
   return date >= start && date <= end;
 }
@@ -76,6 +79,7 @@ export function buildCashflowRows(input: {
     for (const date of scheduleOccurrenceDates(rule, horizonStart, 40)) {
       const key = `${rule.id}|${date}`;
       if (have.has(key) || skipSet.has(key) || date <= input.today) continue;
+      if (date < CASHFLOW_HISTORY_CUTOFF) continue;
       synthetic.push({
         date,
         amount: rule.amount,
@@ -95,6 +99,7 @@ export function buildCashflowRows(input: {
     let scheduledExpense = 0;
     let extraExpense = 0;
     for (const event of events) {
+      if (event.date < CASHFLOW_HISTORY_CUTOFF) continue;
       if (!inRange(event.date, from, period.end)) continue;
       if (event.kind === "income") {
         income += event.amount;

@@ -28,7 +28,7 @@ export function CashflowClient({
       <div>
         <h1 className="text-xl font-bold">キャッシュフロー</h1>
         <p className="mt-1 text-sm text-muted">
-          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。今の期間のデイリーと交通費は、予算から今日までに使った分を引いた残りです。
+          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。2026年10月29日までは旧履歴として外し、10月30日から計算します。今の期間のデイリーと交通費は、予算から今日までに使った分を引いた残りです。
         </p>
       </div>
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}

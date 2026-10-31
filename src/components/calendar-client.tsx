@@ -155,37 +155,51 @@ function ProjectedRemainder({
       e.date > today && inThisMonth(e.date) && !isIncomeEntry(e) ? s + yen(e.amount) : s,
     0,
   );
-  const monthEndForecast = withSavings + upcomingIncome - upcomingExpense;
+  const monthMove = upcomingIncome - upcomingExpense;
+  const forecastWithout = withoutSavings + monthMove;
+  const forecastWith = withSavings + monthMove;
 
   return (
     <section className="rounded-xl border border-line/80 bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">総資産</p>
-      <p className="mt-1 text-xs text-muted">{remainderLabel}</p>
-      <p className="mt-2 text-2xl font-bold tabular-nums">
-        {known.length === 0 ? (
-          "未登録"
-        ) : (
-          <>
-            {formatYen(withoutSavings)}
-            <span className="ml-1 text-base font-normal text-muted">
-              （{formatYen(withSavings)}）
-            </span>
-          </>
-        )}
-      </p>
-      <p className="mt-1 text-[11px] text-muted">
-        括弧内は貯金を含んだ総資産です。
-      </p>
-      <p className="mt-3 text-xs text-muted">月末予想額</p>
-      <p
-        className={`text-xl font-bold tabular-nums ${
-          monthEndForecast < 0 ? "text-expense" : ""
-        }`}
-      >
-        {known.length === 0 ? "未登録" : formatYen(monthEndForecast)}
-      </p>
-      <p className="mt-1 text-[11px] text-muted">
-        貯金込みのいまの総資産に、今日よりあと〜月末の取引と、先の日付で入れた日々の収支を足し引きした額です。月末に予定どおり進むと、括弧内の総資産と揃います。
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-muted">総資産</p>
+          <p className="mt-1 text-xs text-muted">{remainderLabel}</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums">
+            {known.length === 0 ? (
+              "未登録"
+            ) : (
+              <>
+                {formatYen(withoutSavings)}
+                <span className="ml-1 text-base font-normal text-muted">
+                  （{formatYen(withSavings)}）
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="min-w-0 sm:text-right">
+          <p className="text-xs text-muted">月末予想額</p>
+          <p
+            className={`mt-2 text-xl font-bold tabular-nums ${
+              forecastWithout < 0 ? "text-expense" : ""
+            }`}
+          >
+            {known.length === 0 ? (
+              "未登録"
+            ) : (
+              <>
+                {formatYen(forecastWithout)}
+                <span className="ml-1 text-base font-normal text-muted">
+                  （{formatYen(forecastWith)}）
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-muted">
+        括弧内は貯金を含んだ額です。
       </p>
     </section>
   );
@@ -1325,7 +1339,20 @@ function EntryForm({
         {isEdit ? "記録を編集" : "支出を追加（何回でも可）"}
       </p>
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
-      <input type="hidden" name="date" value={editing?.date ?? date} />
+      {isEdit ? (
+        <label className="grid gap-1 text-sm">
+          <span className="text-muted">日付</span>
+          <input
+            name="date"
+            type="date"
+            required
+            defaultValue={(editing?.date ?? date).slice(0, 10)}
+            className="w-fit rounded-md border border-line bg-white px-3 py-2"
+          />
+        </label>
+      ) : (
+        <input type="hidden" name="date" value={date} />
+      )}
       <input type="hidden" name="category_id" value={categoryId} />
       <div className="grid gap-1">
         <span className="text-sm text-muted">用途</span>
