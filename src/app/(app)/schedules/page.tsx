@@ -3,6 +3,7 @@ import {
   ensureDailySpendCategories,
   fetchAssetAccounts,
   fetchScheduledRules,
+  fetchScheduledSpendEntries,
   prepareDailySpendSchedules,
 } from "@/lib/data";
 
@@ -12,14 +13,17 @@ export default async function SchedulesPage() {
     fetchAssetAccounts(),
   ]);
   const scheduleError = await prepareDailySpendSchedules(categories, accounts);
-  const rules = await fetchScheduledRules();
+  const [rules, occurrences] = await Promise.all([
+    fetchScheduledRules(),
+    fetchScheduledSpendEntries(),
+  ]);
 
   return (
     <div className="grid gap-4">
       <div>
         <h1 className="text-xl font-bold">取引登録</h1>
         <p className="mt-1 text-sm text-muted">
-          登録した取引の全体です。毎日の支出の一覧には、見ている月に発生するものだけ出ます。
+          発生した日ごとに並びます。すべてと、登録ごとの絞り込みができます。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
         </p>
       </div>
       <ScheduledRulesPanel
@@ -27,6 +31,7 @@ export default async function SchedulesPage() {
         accounts={accounts}
         categories={categories}
         loadError={scheduleError}
+        occurrences={occurrences}
       />
     </div>
   );
