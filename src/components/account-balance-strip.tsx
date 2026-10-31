@@ -7,7 +7,10 @@ import { todayKeyInTimeZone } from "@/lib/dates";
 import { EditPopover } from "@/components/edit-popover";
 import { formatYen } from "@/lib/money";
 import type { AccountBalanceView } from "@/lib/account-display";
-import { assetAccountKindLabel } from "@/lib/types";
+import {
+  DEFAULT_SAVINGS_ACCOUNTS,
+  isSavingsAccountName,
+} from "@/lib/types";
 
 export function AccountBalanceStrip({
   balances,
@@ -15,12 +18,19 @@ export function AccountBalanceStrip({
   balances: AccountBalanceView[];
 }) {
   const banks = balances.filter((a) => a.kind === "bank");
-  const emoney = balances.filter((a) => a.kind !== "bank");
+  const emoney = balances.filter(
+    (a) => a.kind === "emoney" && !isSavingsAccountName(a.name),
+  );
+  const savings = DEFAULT_SAVINGS_ACCOUNTS.flatMap((item) => {
+    const account = balances.find((row) => row.name === item.name);
+    return account ? [account] : [];
+  });
 
   return (
     <section className="grid gap-3">
       <BalanceRow title="銀行" accounts={banks} />
       <BalanceRow title="電子マネー" accounts={emoney} />
+      <BalanceRow title="貯金" accounts={savings} />
     </section>
   );
 }
@@ -43,10 +53,7 @@ function BalanceRow({
             className="flex items-start justify-between gap-1.5 rounded-xl border border-line/80 bg-surface px-2.5 py-2"
           >
             <div className="min-w-0">
-              <p className="truncate text-xs text-muted">
-                {account.name}
-                <span className="ml-1">{assetAccountKindLabel(account.kind)}</span>
-              </p>
+              <p className="truncate text-xs text-muted">{account.name}</p>
               <p className="mt-0.5 text-base font-bold tabular-nums sm:text-lg">
                 {account.balance == null ? "未登録" : formatYen(account.balance)}
               </p>

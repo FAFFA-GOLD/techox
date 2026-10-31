@@ -135,22 +135,11 @@ function ProjectedRemainder({
   };
   const known = balances.filter((b) => b.balance != null && Number.isFinite(yen(b.balance)));
   const actual = known.reduce((s, b) => s + yen(b.balance), 0);
-  const baseline = known.reduce((s, b) => s + yen(b.baseline), 0);
-  const appliedIncome = known.reduce((s, b) => s + yen(b.appliedIncome), 0);
-  const appliedExpense = known.reduce((s, b) => s + yen(b.appliedExpense), 0);
   const entries = remainderEntries ?? [];
   const monthKey = today.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
   const monthEnd = `${monthKey}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
   const inThisMonth = (date: string) => date >= `${monthKey}-01` && date <= monthEnd;
-  const periodIncome = entries.reduce(
-    (s, e) => (inThisMonth(e.date) && isIncomeEntry(e) ? s + yen(e.amount) : s),
-    0,
-  );
-  const periodExpense = entries.reduce(
-    (s, e) => (inThisMonth(e.date) && !isIncomeEntry(e) ? s + yen(e.amount) : s),
-    0,
-  );
   const upcomingIncome = entries.reduce(
     (s, e) =>
       e.date > today && inThisMonth(e.date) && isIncomeEntry(e) ? s + yen(e.amount) : s,
@@ -180,6 +169,11 @@ function ProjectedRemainder({
         }`}
       >
         {known.length === 0 ? "未登録" : formatYen(projected)}
+        {known.length === 0 ? null : (
+          <span className="ml-1 text-xs font-normal text-muted">
+            （貯金を含んだ金額を表示）
+          </span>
+        )}
       </p>
       <p className="mt-2 text-sm tabular-nums text-muted">
         いまの総資産 {known.length === 0 ? "未登録" : formatYen(actual)}
@@ -187,12 +181,6 @@ function ProjectedRemainder({
         今日より後〜月末の収入 {formatYen(upcomingIncome)}
         {" − "}
         今日より後〜月末の支出 {formatYen(upcomingExpense)}
-      </p>
-      <p className="mt-1 text-xs text-muted">
-        手入力の合計 {formatYen(baseline)} ＋ 今日までの収入 {formatYen(appliedIncome)} −
-        今日までの支出 {formatYen(appliedExpense)} ＝ いまの総資産。この月の総収入{" "}
-        {formatYen(periodIncome)} / 総支出 {formatYen(periodExpense)}。
-        各口座の金額は手入力が正です。残金に足すのは、今日より後で今月末までの記録だけです。
       </p>
     </section>
   );
@@ -622,7 +610,7 @@ export function CalendarClient({
           </div>
           <div className="rounded-xl border border-accent/40 bg-accent/10 p-4">
             <p className="text-xs uppercase tracking-wide text-muted">
-              小遣い残り（家族＋昼食＋雑費）
+              デイリー残金（家族＋昼食＋雑費）
             </p>
             <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span
@@ -642,7 +630,7 @@ export function CalendarClient({
             </p>
           </div>
           <div className="rounded-xl border border-expense/35 bg-expense/10 p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">月の合計支出</p>
+            <p className="text-xs uppercase tracking-wide text-muted">デイリー合計支出</p>
             <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="text-2xl font-bold tabular-nums text-expense">
                 {formatYen(monthTotal)}
@@ -726,6 +714,7 @@ export function CalendarClient({
                     {c.name === MISC_BUDGET_NAME
                       ? "（雑費＋酒＋お菓子）"
                       : ""}
+                    {c.name === "交通費" ? " · デイリー残金には含めない" : ""}
                   </p>
                   {c.lunch ? (
                     <p className="mt-2 rounded-md bg-white/70 px-2 py-1.5 text-xs text-ink">

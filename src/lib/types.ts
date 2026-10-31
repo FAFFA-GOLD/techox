@@ -71,6 +71,21 @@ export const DEFAULT_WALLET_ACCOUNTS: {
   { name: "Suica", kind: "emoney" },
 ];
 
+/** 貯金。総資産には含める。小遣いの予算には含めない。 */
+export const DEFAULT_SAVINGS_ACCOUNTS: { name: string; balance: number }[] = [
+  { name: "自分", balance: 19017 },
+  { name: "家族", balance: 2000 },
+  { name: "緊急時用", balance: 12008 },
+  { name: "旅行", balance: 4002 },
+  { name: "スマホ", balance: 10006 },
+  { name: "イヤホン", balance: 1000 },
+  { name: "HDD", balance: 0 },
+];
+
+export function isSavingsAccountName(name: string): boolean {
+  return DEFAULT_SAVINGS_ACCOUNTS.some((account) => account.name === name);
+}
+
 /** 交通費以外の支出で選べる支払い元。初期値は先頭。 */
 export const SPEND_SOURCE_NAMES = [
   "R-PAY",
