@@ -64,7 +64,7 @@ export const DEFAULT_WALLET_ACCOUNTS: {
   name: string;
   kind: AssetAccountKind;
 }[] = [
-  { name: "docomo銀行", kind: "bank" },
+  { name: "ドコモ銀行", kind: "bank" },
   { name: "Olive銀行", kind: "bank" },
   { name: "PayPay", kind: "emoney" },
   { name: "R-PAY", kind: "emoney" },
@@ -75,7 +75,7 @@ export const DEFAULT_WALLET_ACCOUNTS: {
 export const SPEND_SOURCE_NAMES = [
   "R-PAY",
   "PayPay",
-  "docomo銀行",
+  "ドコモ銀行",
   "Olive銀行",
   "Suica",
 ] as const;

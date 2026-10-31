@@ -158,6 +158,10 @@ export async function ensureDefaultSecondaryBanks(): Promise<void> {
 }
 
 const WALLET_ALIASES: { canonical: string; aliases: string[] }[] = [
+  {
+    canonical: "ドコモ銀行",
+    aliases: ["Docomo銀行", "docomo銀行", "DOCOMO銀行"],
+  },
   { canonical: "PayPay", aliases: ["PayPay残高", "PayPay残高電子マネー"] },
   {
     canonical: "R-PAY",
@@ -274,7 +278,7 @@ async function mergeWalletAliases(
   }
 }
 
-/** docomo / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
+/** ドコモ / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
 export async function ensureWalletAccounts(): Promise<void> {
   const supabase = await createClient();
   const {
