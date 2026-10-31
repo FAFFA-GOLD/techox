@@ -846,7 +846,7 @@ export async function fetchBalanceMovementsSince(
   let query = supabase
     .from("daily_spend_entries")
     .select("date, amount, kind, asset_account_id")
-    .gt("date", sinceExclusive)
+    .gte("date", sinceExclusive)
     .not("asset_account_id", "is", null);
   if (untilInclusive) query = query.lte("date", untilInclusive);
   const { data, error } = await query;
