@@ -206,7 +206,7 @@ function ProjectedRemainder({
         </div>
       </div>
       <p className="mt-2 text-[11px] text-muted">
-        括弧内は貯金を含んだ額です。
+        括弧内貯金額含む
       </p>
     </section>
   );
@@ -484,20 +484,6 @@ export function CalendarClient({
               </Link>
             </p>
           ) : null}
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-            <a
-              href={`/api/export/daily/csv?month=${monthKey}`}
-              className="rounded-md border border-line bg-white/80 px-3 py-1.5 text-xs text-muted hover:text-ink"
-            >
-              CSV出力
-            </a>
-            <a
-              href={`/api/export/daily/pdf?month=${monthKey}`}
-              className="rounded-md border border-line bg-white/80 px-3 py-1.5 text-xs text-muted hover:text-ink"
-            >
-              PDF出力（明細書）
-            </a>
-          </div>
         </div>
         <Link
           href={
@@ -540,9 +526,6 @@ export function CalendarClient({
             <p className="mt-2 text-2xl font-bold tabular-nums text-income">
               {formatYen(monthIncome)}
             </p>
-            <p className="mt-1 text-xs text-muted">
-              表示中の月の収入行を足した金額です
-            </p>
             {incomeLines.length > 0 ? (
               <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto text-xs text-muted">
                 {incomeLines.map((line) => (
@@ -582,7 +565,7 @@ export function CalendarClient({
               {formatYen(monthExpenseAll)}
             </p>
             <p className="mt-1 text-xs text-muted">
-              交通費・固定費を含むこの月の支出
+              交通費・固定費含む当月支出合計
             </p>
           </div>
           <div className="rounded-xl border border-accent/40 bg-accent/10 p-4">
@@ -621,7 +604,7 @@ export function CalendarClient({
               <span className="ml-1 text-xs">（参考・予算外）</span>
             </p>
             <p className="mt-1 text-xs text-muted">
-              {monthEntryCount} 件 · 交通費・固定費を除く小遣いの合計
+              {monthEntryCount} 件 · 交通費・固定費を除くデイリー支出計
             </p>
           </div>
         </div>
