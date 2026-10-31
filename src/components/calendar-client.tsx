@@ -31,6 +31,7 @@ import {
 } from "@/components/payment-source-field";
 import { ScheduledRulesPanel } from "@/components/scheduled-rules-panel";
 import type { AccountBalanceView } from "@/lib/account-display";
+import type { PayPeriod } from "@/lib/pay-period";
 import { formatYen } from "@/lib/money";
 import {
   buildMonthPaceWeights,
@@ -93,6 +94,8 @@ type Props = {
   balances: AccountBalanceView[];
   rules: ScheduledRule[];
   scheduleError: string | null;
+  payPeriod: PayPeriod;
+  payPeriodEntries: DailySpendEntry[];
 };
 
 function calUrl(
@@ -108,6 +111,70 @@ function calUrl(
     p.set("date", opts.date);
   }
   return `/calendar?${p.toString()}`;
+}
+
+function ProjectedRemainder({
+  balances,
+  payPeriod,
+  payPeriodEntries,
+  today,
+}: {
+  balances: AccountBalanceView[];
+  payPeriod: PayPeriod;
+  payPeriodEntries: DailySpendEntry[];
+  today: string;
+}) {
+  const known = balances.filter((b) => b.balance != null);
+  const actual = known.reduce((s, b) => s + (b.balance ?? 0), 0);
+  const baseline = known.reduce((s, b) => s + (b.baseline ?? 0), 0);
+  const appliedIncome = known.reduce((s, b) => s + b.appliedIncome, 0);
+  const appliedExpense = known.reduce((s, b) => s + b.appliedExpense, 0);
+  const periodIncome = payPeriodEntries.reduce(
+    (s, e) => (isIncomeEntry(e) ? s + e.amount : s),
+    0,
+  );
+  const periodExpense = payPeriodEntries.reduce(
+    (s, e) => (isIncomeEntry(e) ? s : s + e.amount),
+    0,
+  );
+  const upcomingIncome = payPeriodEntries.reduce(
+    (s, e) => (e.date > today && isIncomeEntry(e) ? s + e.amount : s),
+    0,
+  );
+  const upcomingExpense = payPeriodEntries.reduce(
+    (s, e) => (e.date > today && !isIncomeEntry(e) ? s + e.amount : s),
+    0,
+  );
+  const projected = actual + upcomingIncome - upcomingExpense;
+
+  return (
+    <section className="rounded-xl border border-line/80 bg-surface p-4">
+      <p className="text-xs uppercase tracking-wide text-muted">今月予定残金</p>
+      <p className="mt-1 text-xs text-muted">
+        {payPeriod.label}（給料日〜次の給料日の前日。月末が土日なら給料日は直前の平日）
+      </p>
+      <p
+        className={`mt-2 text-2xl font-bold tabular-nums ${
+          known.length === 0 ? "text-muted" : projected < 0 ? "text-expense" : ""
+        }`}
+      >
+        {known.length === 0 ? "未登録" : formatYen(projected)}
+      </p>
+      <p className="mt-2 text-sm tabular-nums text-muted">
+        いまの総資産 {known.length === 0 ? "未登録" : formatYen(actual)}
+        {" ＋ "}
+        今日より後の収入 {formatYen(upcomingIncome)}
+        {" − "}
+        今日より後の支出 {formatYen(upcomingExpense)}
+      </p>
+      <p className="mt-1 text-xs text-muted">
+        手入力の合計 {formatYen(baseline)} ＋ 今日までの収入 {formatYen(appliedIncome)} −
+        今日までの支出 {formatYen(appliedExpense)} ＝ いまの総資産。この給与期の総収入{" "}
+        {formatYen(periodIncome)} / 総支出 {formatYen(periodExpense)}。
+        各口座の金額は手入力が正で、先の月の予定は入れません。
+      </p>
+    </section>
+  );
 }
 
 export function CalendarClient({
@@ -126,6 +193,8 @@ export function CalendarClient({
   balances,
   rules,
   scheduleError,
+  payPeriod,
+  payPeriodEntries,
 }: Props) {
   const router = useRouter();
   const monthDate = parseISO(`${monthKey}-01`);
@@ -461,6 +530,13 @@ export function CalendarClient({
       </div>
 
       <AccountBalanceStrip balances={balances} />
+
+      <ProjectedRemainder
+        balances={balances}
+        payPeriod={payPeriod}
+        payPeriodEntries={payPeriodEntries}
+        today={todayStr}
+      />
 
       <section className="grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

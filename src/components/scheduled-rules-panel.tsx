@@ -51,7 +51,11 @@ export function ScheduledRulesPanel({
       {rules.length === 0 ? (
         <p className="text-sm text-muted">登録された取引はまだありません。</p>
       ) : (
-        <ul className="divide-y divide-line/70 overflow-hidden rounded-lg border border-line/70">
+        <details className="rounded-lg border border-line/70 bg-white/60">
+          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+            登録一覧（{rules.length}件）
+          </summary>
+          <ul className="divide-y divide-line/70 border-t border-line/70">
           {rules.map((rule) => {
             const account = accounts.find((a) => a.id === rule.asset_account_id);
             return (
@@ -90,7 +94,8 @@ export function ScheduledRulesPanel({
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </details>
       )}
     </section>
   );
