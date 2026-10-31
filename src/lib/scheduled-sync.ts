@@ -126,6 +126,147 @@ async function fetchPages<T>(
   return { rows };
 }
 
+function ruleSignature(rule: ScheduledRule): string {
+  return [
+    rule.name,
+    rule.flow,
+    rule.schedule_kind,
+    rule.day_of_month,
+    rule.interval_months,
+    rule.amount,
+    rule.asset_account_id ?? "",
+    rule.category_id ?? "",
+    rule.start_date,
+    rule.end_date ?? "",
+  ].join("|");
+}
+
+type SpendRow = {
+  id: string;
+  date: string;
+  amount: number;
+  kind: string;
+  memo: string | null;
+  asset_account_id: string | null;
+  category_id: string | null;
+  scheduled_rule_id: string | null;
+  amount_locked: boolean;
+  created_at: string;
+};
+
+function entrySignature(row: SpendRow): string {
+  return [
+    String(row.date).slice(0, 10),
+    row.kind,
+    row.amount,
+    row.memo ?? "",
+    row.asset_account_id ?? "",
+    row.category_id ?? "",
+  ].join("|");
+}
+
+async function deleteByIds(
+  supabase: Db,
+  table: "daily_spend_entries" | "scheduled_rule_skips" | "scheduled_rules",
+  ids: string[],
+): Promise<{ error?: string }> {
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { error } = await supabase.from(table).delete().in("id", chunk);
+    if (error) return { error: error.message };
+  }
+  return {};
+}
+
+/**
+ * 移行が重なると、同じ取引と同じ日の収入が2件できる。
+ * 名前・金額・日が同じ取引は先に作った1件を残し、同じ日の同じ履歴も1件にする。
+ */
+async function dedupeScheduledCopies(
+  supabase: Db,
+  userId: string,
+  rules: ScheduledRule[],
+): Promise<{ rules: ScheduledRule[]; error?: string }> {
+  const groups = new Map<string, ScheduledRule[]>();
+  for (const rule of rules) {
+    const list = groups.get(ruleSignature(rule)) ?? [];
+    list.push(rule);
+    groups.set(ruleSignature(rule), list);
+  }
+  const removed = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    group.sort(
+      (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+    );
+    for (const dup of group.slice(1)) removed.add(dup.id);
+  }
+  if (removed.size > 0) {
+    const { data: dupEntries, error: dupEntryError } = await supabase
+      .from("daily_spend_entries")
+      .select("id")
+      .eq("user_id", userId)
+      .in("scheduled_rule_id", [...removed]);
+    if (dupEntryError) return { rules, error: dupEntryError.message };
+    const removedEntries = await deleteByIds(
+      supabase,
+      "daily_spend_entries",
+      (dupEntries ?? []).map((row) => row.id as string),
+    );
+    if (removedEntries.error) return { rules, error: removedEntries.error };
+    const { data: dupSkips, error: skipError } = await supabase
+      .from("scheduled_rule_skips")
+      .select("id")
+      .eq("user_id", userId)
+      .in("scheduled_rule_id", [...removed]);
+    if (skipError) return { rules, error: skipError.message };
+    const removedSkips = await deleteByIds(
+      supabase,
+      "scheduled_rule_skips",
+      (dupSkips ?? []).map((row) => row.id as string),
+    );
+    if (removedSkips.error) return { rules, error: removedSkips.error };
+    const removedRules = await deleteByIds(supabase, "scheduled_rules", [...removed]);
+    if (removedRules.error) return { rules, error: removedRules.error };
+  }
+
+  const rows = await fetchPages<SpendRow>((from, to) =>
+    supabase
+      .from("daily_spend_entries")
+      .select(
+        "id, date, amount, kind, memo, asset_account_id, category_id, scheduled_rule_id, amount_locked, created_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at")
+      .range(from, to),
+  );
+  if (rows.error) return { rules, error: rows.error };
+
+  const entryGroups = new Map<string, SpendRow[]>();
+  for (const row of rows.rows) {
+    const list = entryGroups.get(entrySignature(row)) ?? [];
+    list.push(row);
+    entryGroups.set(entrySignature(row), list);
+  }
+  const dropIds: string[] = [];
+  for (const group of entryGroups.values()) {
+    if (group.length < 2) continue;
+    const keeper = group.find(
+      (row) => row.scheduled_rule_id && !removed.has(row.scheduled_rule_id),
+    );
+    if (!keeper) continue;
+    for (const extra of group) {
+      if (extra.id === keeper.id) continue;
+      if (extra.scheduled_rule_id && !removed.has(extra.scheduled_rule_id)) continue;
+      dropIds.push(extra.id);
+    }
+  }
+  const dropped = await deleteByIds(supabase, "daily_spend_entries", dropIds);
+  if (dropped.error) return { rules, error: dropped.error };
+
+  return { rules: rules.filter((rule) => !removed.has(rule.id)) };
+}
+
 /**
  * ページを開くたびに既存行を書き直すと、取引の件数だけ往復して画面が落ちる。
  * ここは「まだ無い日」だけまとめて足す。金額の更新と削除は取引の保存時に行う。
@@ -139,7 +280,10 @@ async function ensureFutureOccurrences(
     .select("*")
     .eq("user_id", userId);
   if (error) return { error: error.message };
-  const rules = (data ?? []) as ScheduledRule[];
+  const loaded = (data ?? []) as ScheduledRule[];
+  const deduped = await dedupeScheduledCopies(supabase, userId, loaded);
+  if (deduped.error) return { error: deduped.error };
+  const rules = deduped.rules;
   if (rules.length === 0) return {};
 
   const today = appToday();
