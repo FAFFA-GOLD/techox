@@ -31,7 +31,9 @@ type Props = {
 
 export default async function CalendarPage({ searchParams }: Props) {
   const params = await searchParams;
-  const monthKey = params.month ?? monthKeyInTimeZone();
+  const currentMonth = monthKeyInTimeZone();
+  const monthKey =
+    params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : currentMonth;
   const selectedDate =
     params.date ?? defaultSelectedDateForMonth(monthKey);
   const view = params.view === "list" ? "list" : "calendar";

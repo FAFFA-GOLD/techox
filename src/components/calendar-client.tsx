@@ -124,25 +124,30 @@ function ProjectedRemainder({
   payPeriodEntries: DailySpendEntry[];
   today: string;
 }) {
-  const known = balances.filter((b) => b.balance != null);
-  const actual = known.reduce((s, b) => s + (b.balance ?? 0), 0);
-  const baseline = known.reduce((s, b) => s + (b.baseline ?? 0), 0);
-  const appliedIncome = known.reduce((s, b) => s + b.appliedIncome, 0);
-  const appliedExpense = known.reduce((s, b) => s + b.appliedExpense, 0);
-  const periodIncome = payPeriodEntries.reduce(
-    (s, e) => (isIncomeEntry(e) ? s + e.amount : s),
+  const yen = (value: unknown) => {
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const known = balances.filter((b) => b.balance != null && Number.isFinite(yen(b.balance)));
+  const actual = known.reduce((s, b) => s + yen(b.balance), 0);
+  const baseline = known.reduce((s, b) => s + yen(b.baseline), 0);
+  const appliedIncome = known.reduce((s, b) => s + yen(b.appliedIncome), 0);
+  const appliedExpense = known.reduce((s, b) => s + yen(b.appliedExpense), 0);
+  const entries = payPeriodEntries ?? [];
+  const periodIncome = entries.reduce(
+    (s, e) => (isIncomeEntry(e) ? s + yen(e.amount) : s),
     0,
   );
-  const periodExpense = payPeriodEntries.reduce(
-    (s, e) => (isIncomeEntry(e) ? s : s + e.amount),
+  const periodExpense = entries.reduce(
+    (s, e) => (isIncomeEntry(e) ? s : s + yen(e.amount)),
     0,
   );
-  const upcomingIncome = payPeriodEntries.reduce(
-    (s, e) => (e.date > today && isIncomeEntry(e) ? s + e.amount : s),
+  const upcomingIncome = entries.reduce(
+    (s, e) => (e.date > today && isIncomeEntry(e) ? s + yen(e.amount) : s),
     0,
   );
-  const upcomingExpense = payPeriodEntries.reduce(
-    (s, e) => (e.date > today && !isIncomeEntry(e) ? s + e.amount : s),
+  const upcomingExpense = entries.reduce(
+    (s, e) => (e.date > today && !isIncomeEntry(e) ? s + yen(e.amount) : s),
     0,
   );
   const projected = actual + upcomingIncome - upcomingExpense;
