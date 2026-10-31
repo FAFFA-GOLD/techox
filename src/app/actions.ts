@@ -65,6 +65,7 @@ function revalidateMoney() {
   revalidatePath("/loans");
   revalidatePath("/settings");
   revalidatePath("/calendar");
+  revalidatePath("/schedules");
 }
 
 export async function signIn(formData: FormData) {

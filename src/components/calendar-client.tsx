@@ -734,6 +734,7 @@ export function CalendarClient({
         categories={categories}
         loadError={scheduleError}
         monthKey={monthKey}
+        occurrences={entries.filter((entry) => entry.scheduled_rule_id)}
       />
 
       <DailySpendCharts

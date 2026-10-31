@@ -757,6 +757,28 @@ export async function fetchScheduledRules(): Promise<
   return (data ?? []) as import("@/lib/types").ScheduledRule[];
 }
 
+/** 取引から作られた日々の記録。登録一覧で「11/1分」のように出す。 */
+export async function fetchScheduledSpendEntries(): Promise<DailySpendEntry[]> {
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const rows: DailySpendEntry[] = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const { data, error } = await supabase
+      .from("daily_spend_entries")
+      .select(
+        "id, date, amount, kind, memo, asset_account_id, category_id, scheduled_rule_id, amount_locked, created_at",
+      )
+      .not("scheduled_rule_id", "is", null)
+      .order("date", { ascending: true })
+      .order("created_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error || !data || data.length === 0) break;
+    rows.push(...(data as DailySpendEntry[]));
+    if (data.length < pageSize) break;
+  }
+  return rows;
+}
+
 export async function fetchDailySpendEntriesInRange(
   start: string,
   end: string,

@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { deleteScheduledRule, saveScheduledRule } from "@/app/actions";
+import { deleteDailySpendEntry, deleteScheduledRule, saveScheduledRule } from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
+import { todayKeyInTimeZone } from "@/lib/dates";
 import { formatYen } from "@/lib/money";
 import { ruleOccursInMonth } from "@/lib/schedule-dates";
-import type { AssetAccount, DailySpendCategory, ScheduledRule } from "@/lib/types";
+import type {
+  AssetAccount,
+  DailySpendCategory,
+  DailySpendEntry,
+  ScheduledRule,
+} from "@/lib/types";
 import {
   FIXED_COST_CATEGORY_NAME,
   isConfidentialCategory,
   isFixedCostCategory,
-  scheduleKindLabel,
 } from "@/lib/types";
 
 type Props = {
@@ -22,6 +27,8 @@ type Props = {
   loadError: string | null;
   /** 指定した月に発生するものだけ一覧する。未指定なら全体 */
   monthKey?: string;
+  /** 取引から作られた日々の記録 */
+  occurrences?: DailySpendEntry[];
 };
 
 export function ScheduledRulesPanel({
@@ -30,6 +37,7 @@ export function ScheduledRulesPanel({
   categories,
   loadError,
   monthKey,
+  occurrences = [],
 }: Props) {
   const expenseCategories = categories.filter(
     (c) => !isConfidentialCategory(c.name),
@@ -47,7 +55,7 @@ export function ScheduledRulesPanel({
         <div>
           <h2 className="text-lg font-bold">取引</h2>
           <p className="mt-1 text-xs text-muted">
-            毎月、または何か月おきかに同じ入出金を登録します。保存した額が、その日の記録として先の月にも入ります。月によって額が変わるときは、カレンダーのその日を編集します。
+            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとです。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
           </p>
         </div>
         <EditPopover buttonLabel="取引を追加" title="取引を追加">
@@ -67,89 +75,204 @@ export function ScheduledRulesPanel({
           </Link>
         </p>
       ) : null}
-      {visible.length === 0 ? (
-        <p className="text-sm text-muted">
-          {monthKey
-            ? "この月に発生する取引はありません。"
-            : "登録された取引はまだありません。"}
-        </p>
-      ) : monthKey ? (
-        <details className="rounded-lg border border-line/70 bg-white/60">
-          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
-            登録一覧（この月 {visible.length}件）
-          </summary>
-          <RuleList
-            rules={visible}
-            accounts={accounts}
-            categories={categories}
-          />
-        </details>
-      ) : (
-        <div className="rounded-lg border border-line/70 bg-white/60">
-          <p className="border-b border-line/70 px-3 py-2.5 text-sm font-medium">
-            登録一覧（{visible.length}件）
-          </p>
-          <RuleList
-            rules={visible}
-            accounts={accounts}
-            categories={categories}
-          />
-        </div>
-      )}
+      <OccurrenceBrowser
+        rules={monthKey ? visible : rules}
+        occurrences={occurrences}
+        accounts={accounts}
+        categories={categories}
+        monthKey={monthKey}
+      />
     </section>
   );
 }
 
-function RuleList({
+function occurrenceMark(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split("-");
+  const mark = `${Number(month)}/${Number(day)}分`;
+  return year === todayKeyInTimeZone().slice(0, 4) ? mark : `${year}/${mark}`;
+}
+
+function ruleScheduleText(rule: ScheduledRule): string {
+  return rule.interval_months === 1
+    ? `毎月${rule.day_of_month}日`
+    : `${rule.interval_months}か月おき ${rule.day_of_month}日`;
+}
+
+function OccurrenceBrowser({
   rules,
+  occurrences,
   accounts,
   categories,
+  monthKey,
 }: {
   rules: ScheduledRule[];
+  occurrences: DailySpendEntry[];
   accounts: AssetAccount[];
   categories: DailySpendCategory[];
+  monthKey?: string;
 }) {
-  return (
-          <ul className="divide-y divide-line/70">
-          {rules.map((rule) => {
-            const account = accounts.find((a) => a.id === rule.asset_account_id);
+  const [selectedId, setSelectedId] = useState("all");
+  const ruleById = useMemo(
+    () => new Map(rules.map((rule) => [rule.id, rule])),
+    [rules],
+  );
+  const scoped = occurrences.filter((row) => {
+    if (!row.scheduled_rule_id) return false;
+    if (monthKey && !row.date.startsWith(monthKey)) return false;
+    return true;
+  });
+  const inScope = scoped.filter(
+    (row) => selectedId === "all" || row.scheduled_rule_id === selectedId,
+  );
+  const sorted = [...inScope].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+  );
+  const seen = new Map<string, number>();
+  for (const row of scoped) {
+    const rule = row.scheduled_rule_id
+      ? ruleById.get(row.scheduled_rule_id)
+      : undefined;
+    const key = duplicateKey(row, rule);
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  const duplicateKeys = new Set(
+    [...seen.entries()].filter(([, count]) => count > 1).map(([key]) => key),
+  );
+  const selected = selectedId === "all" ? null : ruleById.get(selectedId) ?? null;
+  const chips = [...rules].sort((a, b) => a.name.localeCompare(b.name, "ja") || a.created_at.localeCompare(b.created_at));
+  const nameCounts = new Map<string, number>();
+  for (const rule of chips) nameCounts.set(rule.name, (nameCounts.get(rule.name) ?? 0) + 1);
+
+  const list = (
+    <>
+      <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
+        <FilterChip active={selectedId === "all"} onClick={() => setSelectedId("all")}>
+          すべて
+        </FilterChip>
+        {chips.map((rule) => (
+          <FilterChip
+            key={rule.id}
+            active={selectedId === rule.id}
+            onClick={() => setSelectedId(rule.id)}
+          >
+            {rule.name}
+            {(nameCounts.get(rule.name) ?? 0) > 1
+              ? `（${rule.day_of_month}日 ${formatYen(rule.amount)}）`
+              : ""}
+          </FilterChip>
+        ))}
+      </div>
+      {selected ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line/70 px-3 py-2">
+          <p className="min-w-0 flex-1 text-xs text-muted">
+            {selected.name} の登録そのものを直す・消す
+          </p>
+          <EditPopover buttonLabel="登録を編集" title="取引を編集">
+            <RuleForm accounts={accounts} categories={categories} rule={selected} />
+          </EditPopover>
+          <DeleteRuleButton id={selected.id} label="登録を削除" />
+        </div>
+      ) : null}
+      {sorted.length === 0 ? (
+        <p className="border-t border-line/70 px-3 py-4 text-sm text-muted">
+          {selected ? "この登録の発生はまだありません。" : "この範囲の発生はまだありません。"}
+        </p>
+      ) : (
+        <ul className="divide-y divide-line/70 border-t border-line/70">
+          {sorted.map((row) => {
+            const rule = row.scheduled_rule_id
+              ? ruleById.get(row.scheduled_rule_id)
+              : undefined;
+            const account = accounts.find(
+              (item) => item.id === (row.asset_account_id ?? rule?.asset_account_id),
+            );
+            const income = (row.kind ?? rule?.flow) === "income";
             return (
-              <li key={rule.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+              <li key={row.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
-                    {rule.name}
+                    {rule?.name ?? row.memo ?? "取引"}
                     <span className="ml-2 text-xs text-muted">
-                      {scheduleKindLabel(rule.schedule_kind)}
-                      {rule.flow === "income" ? " · 収入" : " · 支出"}
+                      {income ? "収入" : "支出"}
                     </span>
                   </p>
                   <p className="text-xs text-muted">
-                    {rule.interval_months === 1
-                      ? `毎月${rule.day_of_month}日`
-                      : `${rule.interval_months}か月おき ${rule.day_of_month}日`}
+                    {rule ? ruleScheduleText(rule) : "単発"}
                     {account ? ` · ${account.name}` : ""}
-                    {rule.end_date ? ` · ${rule.end_date}まで` : ""}
+                    <span className="ml-1 font-medium text-ink">
+                      {occurrenceMark(row.date)}
+                    </span>
+                    {duplicateKeys.has(duplicateKey(row, rule)) ? (
+                      <span className="ml-2 text-expense">同じ日に重複</span>
+                    ) : null}
                   </p>
                 </div>
                 <p
                   className={`text-sm font-semibold tabular-nums ${
-                    rule.flow === "income" ? "text-income" : "text-expense"
+                    income ? "text-income" : "text-expense"
                   }`}
                 >
-                  {formatYen(rule.amount)}
+                  {formatYen(row.amount)}
                 </p>
-                <EditPopover buttonLabel="編集" title="取引を編集">
-                  <RuleForm
-                    accounts={accounts}
-                    categories={categories}
-                    rule={rule}
-                  />
-                </EditPopover>
-                <DeleteRuleButton id={rule.id} />
+                <form action={deleteDailySpendEntry}>
+                  <input type="hidden" name="id" value={row.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-muted hover:text-expense"
+                  >
+                    この分を削除
+                  </button>
+                </form>
               </li>
             );
           })}
-          </ul>
+        </ul>
+      )}
+    </>
+  );
+
+  if (monthKey) {
+    return (
+      <details className="rounded-lg border border-line/70 bg-white/60">
+        <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
+          この月の発生（{occurrences.filter((row) => row.scheduled_rule_id && row.date.startsWith(monthKey)).length}件）
+        </summary>
+        {list}
+      </details>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-line/70 bg-white/60">
+      <p className="border-b border-line/70 px-3 py-2.5 text-sm font-medium">
+        発生一覧（{sorted.length}件）
+      </p>
+      {list}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-2.5 py-1 text-xs ${
+        active
+          ? "bg-accent text-white"
+          : "border border-line bg-white text-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -161,7 +284,21 @@ function endOfMonthKey(iso: string): string {
   return `${month}-${String(last).padStart(2, "0")}`;
 }
 
-function DeleteRuleButton({ id }: { id: string }) {
+function duplicateKey(
+  row: DailySpendEntry,
+  rule: ScheduledRule | undefined,
+): string {
+  const kind = row.kind ?? rule?.flow ?? "expense";
+  return `${row.date}|${(row.memo ?? rule?.name ?? "").trim()}|${kind}|${row.amount}`;
+}
+
+function DeleteRuleButton({
+  id,
+  label = "削除",
+}: {
+  id: string;
+  label?: string;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <form
@@ -177,7 +314,7 @@ function DeleteRuleButton({ id }: { id: string }) {
         disabled={pending}
         className="text-xs text-muted hover:text-expense disabled:opacity-60"
       >
-        削除
+        {label}
       </button>
     </form>
   );
