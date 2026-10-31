@@ -78,8 +78,7 @@ export const DEFAULT_SAVINGS_ACCOUNTS: { name: string; balance: number }[] = [
   { name: "緊急時用", balance: 12008 },
   { name: "旅行", balance: 4002 },
   { name: "スマホ", balance: 10006 },
-  { name: "イヤホン", balance: 1000 },
-  { name: "HDD", balance: 0 },
+  { name: "HDD", balance: 1000 },
 ];
 
 export function isSavingsAccountName(name: string): boolean {

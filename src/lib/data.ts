@@ -279,6 +279,46 @@ async function mergeWalletAliases(
   }
 }
 
+/** イヤホン貯金は HDD 1,000円にまとめる。初期額0の HDD だけを 1,000円にする。 */
+async function foldEarphoneSavingsIntoHdd(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  rows: { id: string; name: string; archived?: boolean }[],
+): Promise<void> {
+  const earphone = rows.find((row) => row.name === "イヤホン" && !row.archived);
+  const hdd = rows.find((row) => row.name === "HDD" && !row.archived);
+  if (earphone && !hdd) {
+    await supabase
+      .from("asset_accounts")
+      .update({ name: "HDD" })
+      .eq("id", earphone.id);
+    earphone.name = "HDD";
+    return;
+  }
+  if (earphone && hdd) {
+    await supabase
+      .from("asset_accounts")
+      .update({ archived: true })
+      .eq("id", earphone.id);
+    earphone.archived = true;
+  }
+  const hddRow = rows.find((row) => row.name === "HDD" && !row.archived);
+  if (!hddRow) return;
+  const { data: seed } = await supabase
+    .from("account_balance_snapshots")
+    .select("id, balance, note")
+    .eq("asset_account_id", hddRow.id)
+    .eq("note", "貯金の初期額")
+    .eq("balance", 0)
+    .limit(1)
+    .maybeSingle();
+  if (!seed) return;
+  await supabase
+    .from("account_balance_snapshots")
+    .update({ balance: 1000 })
+    .eq("id", seed.id);
+}
+
 /** ドコモ / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
 export async function ensureWalletAccounts(): Promise<void> {
   const supabase = await createClient();
@@ -321,6 +361,7 @@ export async function ensureWalletAccounts(): Promise<void> {
   }
 
   await mergeWalletAliases(supabase, user.id, rows);
+  await foldEarphoneSavingsIntoHdd(supabase, user.id, rows);
 
   for (const savings of DEFAULT_SAVINGS_ACCOUNTS) {
     let accountId = rows.find((row) => row.name === savings.name)?.id as
