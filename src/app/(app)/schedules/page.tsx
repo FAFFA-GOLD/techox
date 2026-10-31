@@ -23,7 +23,7 @@ export default async function SchedulesPage() {
       <div>
         <h1 className="text-xl font-bold">取引登録</h1>
         <p className="mt-1 text-sm text-muted">
-          発生した日ごとに並びます。すべてと、登録ごとの絞り込みができます。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
+          発生した日ごとに並びます。すべてと、種別（定期・カード・ローン）で絞り込めます。同じ日が2行あるときは、余分な分を削除するとその日の二重計上が止まります。
         </p>
       </div>
       <ScheduledRulesPanel
