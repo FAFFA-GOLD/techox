@@ -29,7 +29,10 @@ import {
   defaultAccountId,
   PaymentSourceField,
 } from "@/components/payment-source-field";
-import { ScheduledRulesPanel } from "@/components/scheduled-rules-panel";
+import {
+  NewScheduledRuleButton,
+  ScheduledRulesPanel,
+} from "@/components/scheduled-rules-panel";
 import type { AccountBalanceView } from "@/lib/account-display";
 import { formatYen } from "@/lib/money";
 import {
@@ -212,6 +215,7 @@ export function CalendarClient({
   remainderLabel,
 }: Props) {
   const router = useRouter();
+  const [txOpen, setTxOpen] = useState(false);
   const monthDate = parseISO(`${monthKey}-01`);
   const todayStr = todayKeyInTimeZone();
   const todayMonth = monthKeyInTimeZone();
@@ -586,7 +590,24 @@ export function CalendarClient({
             ) : null}
           </div>
           <div className="rounded-xl border border-expense/35 bg-expense/10 p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setTxOpen(true)}
+                  className="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+                >
+                  一覧
+                </button>
+                <NewScheduledRuleButton
+                  accounts={accounts}
+                  categories={categories}
+                  buttonLabel="登録"
+                  buttonClassName="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+                />
+              </div>
+            </div>
             <p className="mt-2 text-2xl font-bold tabular-nums text-expense">
               {formatYen(monthExpenseAll)}
             </p>
@@ -680,7 +701,7 @@ export function CalendarClient({
                     {formatYen(c.spent)}
                   </p>
                   <p className="mt-1 text-xs text-muted">
-                    雑費予算から減算（酒＋お菓子＋雑費で合算）
+                    雑費予算から減算
                   </p>
                 </>
               ) : (
@@ -728,14 +749,39 @@ export function CalendarClient({
 
       </section>
 
-      <ScheduledRulesPanel
-        rules={rules}
-        accounts={accounts}
-        categories={categories}
-        loadError={scheduleError}
-        monthKey={monthKey}
-        occurrences={entries.filter((entry) => entry.scheduled_rule_id)}
-      />
+      {txOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-3 sm:items-center"
+          onClick={() => setTxOpen(false)}
+        >
+          <div
+            className="grid max-h-[85dvh] w-full max-w-3xl gap-3 overflow-y-auto rounded-xl border border-line bg-white p-3 sm:p-4"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-label="この月の取引"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold">この月の取引</h3>
+              <button
+                type="button"
+                onClick={() => setTxOpen(false)}
+                className="text-xs text-muted hover:text-ink"
+              >
+                閉じる
+              </button>
+            </div>
+            <ScheduledRulesPanel
+              rules={rules}
+              accounts={accounts}
+              categories={categories}
+              loadError={scheduleError}
+              monthKey={monthKey}
+              occurrences={entries.filter((entry) => entry.scheduled_rule_id)}
+              variant="dialog"
+            />
+          </div>
+        </div>
+      ) : null}
 
       <DailySpendCharts
         monthKey={monthKey}

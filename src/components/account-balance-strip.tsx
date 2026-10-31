@@ -36,24 +36,22 @@ function BalanceRow({
   return (
     <div className="grid gap-2">
       <p className="text-xs font-medium text-muted">{title}</p>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
         {accounts.map((account) => (
           <article
             key={account.id}
-            className="flex items-start justify-between gap-2 rounded-xl border border-line/80 bg-surface px-3 py-3"
+            className="flex items-start justify-between gap-1.5 rounded-xl border border-line/80 bg-surface px-2.5 py-2"
           >
             <div className="min-w-0">
               <p className="truncate text-xs text-muted">
                 {account.name}
                 <span className="ml-1">{assetAccountKindLabel(account.kind)}</span>
               </p>
-              <p className="mt-1 text-xl font-bold tabular-nums">
+              <p className="mt-0.5 text-base font-bold tabular-nums sm:text-lg">
                 {account.balance == null ? "未登録" : formatYen(account.balance)}
               </p>
-              <p className="mt-1 text-[11px] text-muted">
-                {account.asOf
-                  ? `${account.asOf} の手入力が正。翌日〜今日の記録だけ反映`
-                  : "変更から残高を登録"}
+              <p className="mt-0.5 text-[10px] leading-snug text-muted">
+                {account.asOf ? `${account.asOf} 以降〜今日` : "残高を登録"}
               </p>
             </div>
             <EditPopover title={`${account.name}の残高`}>

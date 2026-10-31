@@ -5,10 +5,18 @@ import { useState } from "react";
 type Props = {
   buttonLabel?: string;
   title: string;
+  wide?: boolean;
+  buttonClassName?: string;
   children: React.ReactNode;
 };
 
-export function EditPopover({ buttonLabel = "変更", title, children }: Props) {
+export function EditPopover({
+  buttonLabel = "変更",
+  title,
+  wide = false,
+  buttonClassName,
+  children,
+}: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -16,7 +24,10 @@ export function EditPopover({ buttonLabel = "変更", title, children }: Props) 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+        className={
+          buttonClassName ??
+          "rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+        }
       >
         {buttonLabel}
       </button>
@@ -26,7 +37,9 @@ export function EditPopover({ buttonLabel = "変更", title, children }: Props) 
           onClick={() => setOpen(false)}
         >
           <div
-            className="grid max-h-[85dvh] w-full max-w-md gap-3 overflow-y-auto rounded-xl border border-line bg-white p-4"
+            className={`grid max-h-[85dvh] w-full gap-3 overflow-y-auto rounded-xl border border-line bg-white p-4 ${
+              wide ? "max-w-3xl" : "max-w-md"
+            }`}
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-label={title}

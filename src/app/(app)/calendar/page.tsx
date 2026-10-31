@@ -111,7 +111,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   return (
     <div className="grid gap-4">
       <p className="rounded-xl border border-line/80 bg-white/60 px-4 py-3 text-sm text-muted">
-        毎日の支出が家計の本体です。銀行と電子マネーの残高、この月の総収入・総支出、用途別の小遣いをここで見ます。交通費は支払い元を Suica か PayPay から選びます。それ以外の支出の初期は R-PAY です。毎月の引き落としは下の「取引」に登録すると、該当日へ自動で入ります。
+        デイリーボードが家計の本体です。銀行と電子マネーの残高、この月の総収入・総支出、用途別の小遣いをここで見ます。交通費は支払い元を Suica か PayPay から選びます。それ以外の支出の初期は R-PAY です。毎月の引き落としは総支出の「登録」から入れ、当月の一覧は「一覧」です。
       </p>
       <CalendarClient
         monthKey={monthKey}

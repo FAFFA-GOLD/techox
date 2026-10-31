@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { BRAND_NAME } from "@/lib/brand";
 
 const links = [
-  { href: "/calendar", label: "毎日の支出" },
+  { href: "/calendar", label: "デイリーボード" },
   { href: "/schedules", label: "取引登録" },
   { href: "/settings", label: "設定" },
 ];
