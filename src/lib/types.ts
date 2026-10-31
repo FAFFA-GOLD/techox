@@ -76,7 +76,6 @@ export const DEFAULT_SAVINGS_ACCOUNTS: { name: string; balance: number }[] = [
   { name: "自分", balance: 19017 },
   { name: "家族", balance: 2000 },
   { name: "緊急時用", balance: 12008 },
-  { name: "旅行", balance: 4002 },
   { name: "スマホ", balance: 10006 },
   { name: "HDD", balance: 1000 },
 ];

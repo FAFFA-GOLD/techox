@@ -43,8 +43,6 @@ type Props = {
   entries: DailySpendEntry[];
   holidayDates: string[];
   makikoOffDates?: string[];
-  compareMonth: string;
-  compareEntries: DailySpendEntry[];
 };
 
 function yenTick(n: number): string {
@@ -67,8 +65,6 @@ export function DailySpendCharts({
   entries,
   holidayDates,
   makikoOffDates = [],
-  compareMonth,
-  compareEntries,
 }: Props) {
   const holidaySet = useMemo(() => new Set(holidayDates), [holidayDates]);
   const makikoSet = useMemo(() => new Set(makikoOffDates), [makikoOffDates]);
@@ -294,25 +290,6 @@ export function DailySpendCharts({
   ]);
 
   const hasAny = entries.length > 0;
-  const hasCompare = Boolean(compareMonth && compareMonth !== monthKey);
-
-  const compareCategoryBars = useMemo(() => {
-    if (!hasCompare) return [];
-    return categories.map((c) => {
-      const current = entries
-        .filter((e) => e.category_id === c.id)
-        .reduce((s, e) => s + e.amount, 0);
-      const previous = compareEntries
-        .filter((e) => e.category_id === c.id)
-        .reduce((s, e) => s + e.amount, 0);
-      return {
-        name: c.name,
-        current,
-        previous,
-        color: c.color,
-      };
-    });
-  }, [categories, compareEntries, entries, hasCompare]);
 
   return (
     <section className="grid gap-4 lg:grid-cols-2">
@@ -618,55 +595,6 @@ export function DailySpendCharts({
         )}
       </div>
 
-      {hasCompare ? (
-        <div className="rounded-xl border border-line/80 bg-surface p-4 lg:col-span-2">
-          <h2 className="text-sm font-bold">用途別の月比較</h2>
-          <p className="mt-0.5 text-xs text-muted">
-            {monthKey}（濃色）と {compareMonth}（薄色）の使用額比較
-          </p>
-          <div className="mt-3 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={compareCategoryBars}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#c9d9d4" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fill: "#5b6f69", fontSize: 11 }}
-                  axisLine={{ stroke: "#c9d9d4" }}
-                />
-                <YAxis
-                  tickFormatter={yenTick}
-                  tick={{ fill: "#5b6f69", fontSize: 11 }}
-                  axisLine={{ stroke: "#c9d9d4" }}
-                  width={44}
-                />
-                <Tooltip
-                  formatter={(value, name) => [
-                    formatYen(Number(value ?? 0)),
-                    name === "current" ? monthKey : compareMonth,
-                  ]}
-                  contentStyle={{
-                    borderRadius: 8,
-                    borderColor: "#c9d9d4",
-                    fontSize: 12,
-                  }}
-                />
-                <Legend
-                  formatter={(value) => (value === "current" ? monthKey : compareMonth)}
-                />
-                <Bar dataKey="previous" name="previous" fill="#9ca3af" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="current" name="current" radius={[4, 4, 0, 0]}>
-                  {compareCategoryBars.map((c) => (
-                    <Cell key={c.name} fill={c.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
