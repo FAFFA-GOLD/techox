@@ -17,7 +17,7 @@ export default async function LunchCalcPage({ searchParams }: Props) {
       <div>
         <p className="text-sm text-muted">
           <Link href={backHref} className="hover:text-ink">
-            ← 毎日の支出
+            ← デイリーボード
           </Link>
         </p>
         <h1 className="text-xl font-bold">昼食計算</h1>

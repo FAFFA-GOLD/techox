@@ -38,6 +38,8 @@ type Props = {
   monthKey?: string;
   /** 取引から作られた日々の記録 */
   occurrences?: DailySpendEntry[];
+  /** ポップアップ内。見出しを短くし、月の一覧を開いた状態にする */
+  variant?: "page" | "dialog";
 };
 
 export function ScheduledRulesPanel({
@@ -47,6 +49,7 @@ export function ScheduledRulesPanel({
   loadError,
   monthKey,
   occurrences = [],
+  variant = "page",
 }: Props) {
   const expenseCategories = categories.filter(
     (c) => !isConfidentialCategory(c.name),
@@ -58,23 +61,25 @@ export function ScheduledRulesPanel({
     categories.find((c) => isFixedCostCategory(c.name)) ??
     categories.find((c) => c.name === FIXED_COST_CATEGORY_NAME);
 
+  const dialog = variant === "dialog";
+
   return (
-    <section className="grid gap-3 rounded-xl border border-line/80 bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-bold">取引</h2>
-          <p className="mt-1 text-xs text-muted">
-            毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとで、すべてと種別（定期・カード・ローン）で絞れます。近い月の金額がわかったときは、その日の行だけ直せます。先の月は登録したおおよその金額のままです。
-          </p>
-        </div>
-        <EditPopover buttonLabel="取引を追加" title="取引を追加">
-          <RuleForm
+    <section className={dialog ? "grid gap-3" : "grid gap-3 rounded-xl border border-line/80 bg-surface p-4"}>
+      {dialog ? null : (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-bold">取引</h2>
+            <p className="mt-1 text-xs text-muted">
+              毎月、または何か月おきかに同じ入出金を登録します。一覧は発生した日ごとで、すべてと種別（定期・カード・ローン）で絞れます。近い月の金額がわかったときは、その日の行だけ直せます。先の月は登録したおおよその金額のままです。期間は 2026/10/1～ のように出します。
+            </p>
+          </div>
+          <NewScheduledRuleButton
             accounts={accounts}
             categories={categories}
             defaultCategoryId={fixed?.id ?? expenseCategories[0]?.id ?? ""}
           />
-        </EditPopover>
-      </div>
+        </div>
+      )}
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}
       {monthKey ? (
         <p className="text-xs text-muted">
@@ -90,8 +95,39 @@ export function ScheduledRulesPanel({
         accounts={accounts}
         categories={categories}
         monthKey={monthKey}
+        expanded={dialog}
       />
     </section>
+  );
+}
+
+export function NewScheduledRuleButton({
+  accounts,
+  categories,
+  defaultCategoryId,
+  buttonLabel = "取引を追加",
+  buttonClassName,
+}: {
+  accounts: AssetAccount[];
+  categories: DailySpendCategory[];
+  defaultCategoryId?: string;
+  buttonLabel?: string;
+  buttonClassName?: string;
+}) {
+  const expenseCategories = categories.filter(
+    (c) => !isConfidentialCategory(c.name),
+  );
+  const fixed =
+    categories.find((c) => isFixedCostCategory(c.name)) ??
+    categories.find((c) => c.name === FIXED_COST_CATEGORY_NAME);
+  return (
+    <EditPopover buttonLabel={buttonLabel} title="取引を追加" buttonClassName={buttonClassName}>
+      <RuleForm
+        accounts={accounts}
+        categories={categories}
+        defaultCategoryId={defaultCategoryId ?? fixed?.id ?? expenseCategories[0]?.id ?? ""}
+      />
+    </EditPopover>
   );
 }
 
@@ -107,18 +143,30 @@ function ruleScheduleText(rule: ScheduledRule): string {
     : `${rule.interval_months}か月おき ${rule.day_of_month}日`;
 }
 
+function slashDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split("-");
+  return `${year}/${Number(month)}/${Number(day)}`;
+}
+
+function rulePeriodText(rule: ScheduledRule): string {
+  const start = slashDate(rule.start_date);
+  return rule.end_date ? `${start}～${slashDate(rule.end_date)}` : `${start}～`;
+}
+
 function OccurrenceBrowser({
   rules,
   occurrences,
   accounts,
   categories,
   monthKey,
+  expanded = false,
 }: {
   rules: ScheduledRule[];
   occurrences: DailySpendEntry[];
   accounts: AssetAccount[];
   categories: DailySpendCategory[];
   monthKey?: string;
+  expanded?: boolean;
 }) {
   const [selectedKind, setSelectedKind] = useState<"all" | ScheduleKind>("all");
   const ruleById = useMemo(
@@ -187,7 +235,7 @@ function OccurrenceBrowser({
             <li key={rule.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
               <p className="min-w-0 flex-1 text-xs text-muted">
                 <span className="font-medium text-ink">{rule.name}</span>
-                {` · ${ruleScheduleText(rule)} · ${formatYen(rule.amount)}`}
+                {` · ${ruleScheduleText(rule)} · ${formatYen(rule.amount)} · ${rulePeriodText(rule)}`}
               </p>
               <EditPopover buttonLabel="登録を編集" title="取引を編集">
                 <RuleForm accounts={accounts} categories={categories} rule={rule} />
@@ -271,7 +319,7 @@ function OccurrenceBrowser({
     </>
   );
 
-  if (monthKey) {
+  if (monthKey && !expanded) {
     return (
       <details className="rounded-lg border border-line/70 bg-white/60">
         <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium">
