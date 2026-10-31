@@ -31,7 +31,6 @@ import {
 } from "@/components/payment-source-field";
 import { ScheduledRulesPanel } from "@/components/scheduled-rules-panel";
 import type { AccountBalanceView } from "@/lib/account-display";
-import type { PayPeriod } from "@/lib/pay-period";
 import { formatYen } from "@/lib/money";
 import {
   buildMonthPaceWeights,
@@ -94,8 +93,9 @@ type Props = {
   balances: AccountBalanceView[];
   rules: ScheduledRule[];
   scheduleError: string | null;
-  payPeriod: PayPeriod;
-  payPeriodEntries: DailySpendEntry[];
+  /** 今日を含む暦月の記録。翌月以降は含まない */
+  remainderEntries: DailySpendEntry[];
+  remainderLabel: string;
 };
 
 function calUrl(
@@ -115,13 +115,13 @@ function calUrl(
 
 function ProjectedRemainder({
   balances,
-  payPeriod,
-  payPeriodEntries,
+  remainderEntries,
+  remainderLabel,
   today,
 }: {
   balances: AccountBalanceView[];
-  payPeriod: PayPeriod;
-  payPeriodEntries: DailySpendEntry[];
+  remainderEntries: DailySpendEntry[];
+  remainderLabel: string;
   today: string;
 }) {
   const yen = (value: unknown) => {
@@ -133,21 +133,27 @@ function ProjectedRemainder({
   const baseline = known.reduce((s, b) => s + yen(b.baseline), 0);
   const appliedIncome = known.reduce((s, b) => s + yen(b.appliedIncome), 0);
   const appliedExpense = known.reduce((s, b) => s + yen(b.appliedExpense), 0);
-  const entries = payPeriodEntries ?? [];
+  const entries = remainderEntries ?? [];
+  const monthKey = today.slice(0, 7);
+  const [year, month] = monthKey.split("-").map(Number);
+  const monthEnd = `${monthKey}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+  const inThisMonth = (date: string) => date >= `${monthKey}-01` && date <= monthEnd;
   const periodIncome = entries.reduce(
-    (s, e) => (isIncomeEntry(e) ? s + yen(e.amount) : s),
+    (s, e) => (inThisMonth(e.date) && isIncomeEntry(e) ? s + yen(e.amount) : s),
     0,
   );
   const periodExpense = entries.reduce(
-    (s, e) => (isIncomeEntry(e) ? s : s + yen(e.amount)),
+    (s, e) => (inThisMonth(e.date) && !isIncomeEntry(e) ? s + yen(e.amount) : s),
     0,
   );
   const upcomingIncome = entries.reduce(
-    (s, e) => (e.date > today && isIncomeEntry(e) ? s + yen(e.amount) : s),
+    (s, e) =>
+      e.date > today && inThisMonth(e.date) && isIncomeEntry(e) ? s + yen(e.amount) : s,
     0,
   );
   const upcomingExpense = entries.reduce(
-    (s, e) => (e.date > today && !isIncomeEntry(e) ? s + yen(e.amount) : s),
+    (s, e) =>
+      e.date > today && inThisMonth(e.date) && !isIncomeEntry(e) ? s + yen(e.amount) : s,
     0,
   );
   const projected = actual + upcomingIncome - upcomingExpense;
@@ -156,7 +162,7 @@ function ProjectedRemainder({
     <section className="rounded-xl border border-line/80 bg-surface p-4">
       <p className="text-xs uppercase tracking-wide text-muted">今月予定残金</p>
       <p className="mt-1 text-xs text-muted">
-        {payPeriod.label}（給料日〜次の給料日の前日。月末が土日なら給料日は直前の平日）
+        {remainderLabel}（この月の1日〜末日。翌月以降の予定は入れない）
       </p>
       <p
         className={`mt-2 text-2xl font-bold tabular-nums ${
@@ -168,15 +174,15 @@ function ProjectedRemainder({
       <p className="mt-2 text-sm tabular-nums text-muted">
         いまの総資産 {known.length === 0 ? "未登録" : formatYen(actual)}
         {" ＋ "}
-        今日より後の収入 {formatYen(upcomingIncome)}
+        今日より後〜月末の収入 {formatYen(upcomingIncome)}
         {" − "}
-        今日より後の支出 {formatYen(upcomingExpense)}
+        今日より後〜月末の支出 {formatYen(upcomingExpense)}
       </p>
       <p className="mt-1 text-xs text-muted">
         手入力の合計 {formatYen(baseline)} ＋ 今日までの収入 {formatYen(appliedIncome)} −
-        今日までの支出 {formatYen(appliedExpense)} ＝ いまの総資産。この給与期の総収入{" "}
+        今日までの支出 {formatYen(appliedExpense)} ＝ いまの総資産。この月の総収入{" "}
         {formatYen(periodIncome)} / 総支出 {formatYen(periodExpense)}。
-        各口座の金額は手入力が正で、先の月の予定は入れません。
+        各口座の金額は手入力が正です。残金に足すのは、今日より後で今月末までの記録だけです。
       </p>
     </section>
   );
@@ -198,8 +204,8 @@ export function CalendarClient({
   balances,
   rules,
   scheduleError,
-  payPeriod,
-  payPeriodEntries,
+  remainderEntries,
+  remainderLabel,
 }: Props) {
   const router = useRouter();
   const monthDate = parseISO(`${monthKey}-01`);
@@ -538,8 +544,8 @@ export function CalendarClient({
 
       <ProjectedRemainder
         balances={balances}
-        payPeriod={payPeriod}
-        payPeriodEntries={payPeriodEntries}
+        remainderEntries={remainderEntries}
+        remainderLabel={remainderLabel}
         today={todayStr}
       />
 
