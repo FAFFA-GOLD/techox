@@ -157,6 +157,122 @@ export async function ensureDefaultSecondaryBanks(): Promise<void> {
   });
 }
 
+const WALLET_ALIASES: { canonical: string; aliases: string[] }[] = [
+  { canonical: "PayPay", aliases: ["PayPay残高", "PayPay残高電子マネー"] },
+  {
+    canonical: "R-PAY",
+    aliases: ["楽天ペイ", "楽天ペイ電子マネー", "楽天Pay"],
+  },
+];
+
+async function retargetAccount(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: string,
+  column: string,
+  fromId: string,
+  toId: string,
+) {
+  await supabase.from(table).update({ [column]: toId }).eq(column, fromId);
+}
+
+async function moveSnapshots(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  fromId: string,
+  toId: string,
+) {
+  const { data } = await supabase
+    .from("account_balance_snapshots")
+    .select("id, as_of_date, balance, note")
+    .eq("asset_account_id", fromId);
+  for (const snap of data ?? []) {
+    const { error } = await supabase
+      .from("account_balance_snapshots")
+      .update({ asset_account_id: toId })
+      .eq("id", snap.id);
+    if (error) {
+      await supabase.from("account_balance_snapshots").delete().eq("id", snap.id);
+    }
+  }
+  void userId;
+}
+
+async function mergeWalletAliases(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  rows: { id: string; name: string }[],
+) {
+  for (const group of WALLET_ALIASES) {
+    const canonical = rows.find((row) => row.name === group.canonical);
+    if (!canonical) continue;
+    for (const aliasName of group.aliases) {
+      const alias = rows.find((row) => row.name === aliasName);
+      if (!alias || alias.id === canonical.id) continue;
+      await retargetAccount(
+        supabase,
+        "daily_spend_entries",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "scheduled_rules",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "transactions",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "recurring_rules",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "credit_cards",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "loans",
+        "asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "account_transfers",
+        "from_asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await retargetAccount(
+        supabase,
+        "account_transfers",
+        "to_asset_account_id",
+        alias.id,
+        canonical.id,
+      );
+      await moveSnapshots(supabase, userId, alias.id, canonical.id);
+      await supabase
+        .from("asset_accounts")
+        .update({ archived: true })
+        .eq("id", alias.id);
+    }
+  }
+}
+
 /** docomo / Olive / PayPay / R-PAY / Suica を無ければ追加。Suica の旧残高を初回だけ移す。 */
 export async function ensureWalletAccounts(): Promise<void> {
   const supabase = await createClient();
@@ -192,6 +308,8 @@ export async function ensureWalletAccounts(): Promise<void> {
       rows.push({ id: created.id, name: created.name, sort_order: sort });
     }
   }
+
+  await mergeWalletAliases(supabase, user.id, rows);
 
   const suica = rows.find((r) => r.name === "Suica");
   if (!suica) return;
@@ -576,6 +694,7 @@ export async function ensureDailySpendCategories(): Promise<DailySpendCategory[]
 
 export async function fetchBalanceMovementsSince(
   sinceExclusive: string,
+  untilInclusive?: string,
 ): Promise<
   {
     date: string;
@@ -585,11 +704,13 @@ export async function fetchBalanceMovementsSince(
   }[]
 > {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("daily_spend_entries")
     .select("date, amount, kind, asset_account_id")
     .gt("date", sinceExclusive)
     .not("asset_account_id", "is", null);
+  if (untilInclusive) query = query.lte("date", untilInclusive);
+  const { data, error } = await query;
   if (error) return [];
   return data ?? [];
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { format } from "date-fns";
+import { useRouter } from "next/navigation";
 import { upsertBalanceSnapshot } from "@/app/actions";
+import { todayKeyInTimeZone } from "@/lib/dates";
 import { EditPopover } from "@/components/edit-popover";
 import { formatYen } from "@/lib/money";
 import type { AccountBalanceView } from "@/lib/account-display";
@@ -51,7 +52,7 @@ function BalanceRow({
               </p>
               <p className="mt-1 text-[11px] text-muted">
                 {account.asOf
-                  ? `${account.asOf} 以降の入出金を反映`
+                  ? `${account.asOf} の手入力が正。翌日〜今日の記録だけ反映`
                   : "変更から残高を登録"}
               </p>
             </div>
@@ -69,7 +70,8 @@ function BalanceForm({ accountId }: { accountId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [pending, startTransition] = useTransition();
-  const today = format(new Date(), "yyyy-MM-dd");
+  const router = useRouter();
+  const today = todayKeyInTimeZone();
 
   return (
     <form
@@ -79,6 +81,7 @@ function BalanceForm({ accountId }: { accountId: string }) {
           const res = await upsertBalanceSnapshot(fd);
           setError(res?.error ?? null);
           setOk(!res?.error);
+          if (!res?.error) router.refresh();
         });
       }}
     >
@@ -104,7 +107,7 @@ function BalanceForm({ accountId }: { accountId: string }) {
         />
       </label>
       <p className="text-[11px] text-muted">
-        入力した日の残高が正になります。その翌日以降の入出金だけを足し引きします。
+        入力した金額が、その日の実残高です。翌日以降に記録した入出金だけを足し引きします。今日より先の予定はここには入れません。もう一度手入力すると、その金額が新しい正になります。
       </p>
       <button
         type="submit"

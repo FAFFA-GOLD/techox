@@ -1,5 +1,6 @@
 import { CalendarClient } from "@/components/calendar-client";
 import { buildAccountBalanceViews } from "@/lib/account-display";
+import { payPeriodContaining } from "@/lib/pay-period";
 import {
   defaultSelectedDateForMonth,
   monthKeyInTimeZone,
@@ -64,15 +65,19 @@ export default async function CalendarPage({ searchParams }: Props) {
     })
     .filter((date): date is string => Boolean(date));
   const earliest = asOfDates.sort()[0];
+  const payPeriod = payPeriodContaining(today);
 
-  const [entries, holidays, makikoOffs, scratchpad, rules, movements] =
+  const [entries, holidays, makikoOffs, scratchpad, rules, movements, payPeriodEntries] =
     await Promise.all([
       fetchDailySpendEntriesInRange(start, end),
       fetchDailySpendHolidaysInRange(start, end),
       fetchDailySpendMakikoOffsInRange(start, end),
       fetchDailyScratchpad(monthKey),
       fetchScheduledRules(),
-      earliest ? fetchBalanceMovementsSince(earliest) : Promise.resolve([]),
+      earliest
+        ? fetchBalanceMovementsSince(earliest, today)
+        : Promise.resolve([]),
+      fetchDailySpendEntriesInRange(payPeriod.start, payPeriod.end),
     ]);
 
   let compareEntries = entries;
@@ -117,6 +122,8 @@ export default async function CalendarPage({ searchParams }: Props) {
         balances={balances}
         rules={rules}
         scheduleError={scheduleError}
+        payPeriod={payPeriod}
+        payPeriodEntries={payPeriodEntries}
       />
     </div>
   );
