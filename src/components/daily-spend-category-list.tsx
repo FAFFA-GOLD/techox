@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import {
   createDailySpendEntry,
@@ -32,8 +31,9 @@ export function DailySpendCategoryList({
   categoryId,
   accounts,
 }: Props) {
+  const [activeId, setActiveId] = useState(categoryId);
   const activeCategory =
-    categories.find((c) => c.id === categoryId) ?? categories[0];
+    categories.find((c) => c.id === activeId) ?? categories[0];
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<DailySpendEntry | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -80,10 +80,6 @@ export function DailySpendCategoryList({
     });
   }
 
-  function calListUrl(catId: string) {
-    return `/calendar?month=${monthKey}&view=list&category=${catId}`;
-  }
-
   if (!activeCategory) return null;
 
   return (
@@ -93,9 +89,10 @@ export function DailySpendCategoryList({
           const count = entries.filter((e) => e.category_id === c.id).length;
           const active = c.id === activeCategory.id;
           return (
-            <Link
+            <button
               key={c.id}
-              href={calListUrl(c.id)}
+              type="button"
+              onClick={() => setActiveId(c.id)}
               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
                 active
                   ? "border-accent bg-accent text-white"
@@ -112,7 +109,7 @@ export function DailySpendCategoryList({
               >
                 {count}
               </span>
-            </Link>
+            </button>
           );
         })}
       </div>
