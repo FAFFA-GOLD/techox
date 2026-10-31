@@ -8,6 +8,7 @@ import { BRAND_NAME } from "@/lib/brand";
 const links = [
   { href: "/calendar", label: "デイリーボード" },
   { href: "/schedules", label: "取引登録" },
+  { href: "/forecast", label: "キャッシュフロー" },
   { href: "/settings", label: "設定" },
 ];
 

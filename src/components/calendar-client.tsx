@@ -63,6 +63,7 @@ import {
   isFixedCostCategory,
   isIncomeEntry,
   isLegacyPocketMonth,
+  isSavingsAccountName,
   isLunchCategory,
   isMiscGroupCategory,
   isMiscGroupChild,
@@ -134,7 +135,11 @@ function ProjectedRemainder({
     return Number.isFinite(n) ? n : 0;
   };
   const known = balances.filter((b) => b.balance != null && Number.isFinite(yen(b.balance)));
-  const actual = known.reduce((s, b) => s + yen(b.balance), 0);
+  const withSavings = known.reduce((s, b) => s + yen(b.balance), 0);
+  const savings = known
+    .filter((b) => isSavingsAccountName(b.name))
+    .reduce((s, b) => s + yen(b.balance), 0);
+  const withoutSavings = withSavings - savings;
   const entries = remainderEntries ?? [];
   const monthKey = today.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
@@ -150,37 +155,37 @@ function ProjectedRemainder({
       e.date > today && inThisMonth(e.date) && !isIncomeEntry(e) ? s + yen(e.amount) : s,
     0,
   );
-  const projected = actual + upcomingIncome - upcomingExpense;
+  const monthEndForecast = withSavings + upcomingIncome - upcomingExpense;
 
   return (
     <section className="rounded-xl border border-line/80 bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">
-        総資産
-        <span className="ml-1 text-[10px] font-normal normal-case tracking-normal">
-          （今月予定残金）
-        </span>
-      </p>
-      <p className="mt-1 text-xs text-muted">
-        {remainderLabel}（この月の1日〜末日。翌月以降の予定は入れない）
-      </p>
-      <p
-        className={`mt-2 text-2xl font-bold tabular-nums ${
-          known.length === 0 ? "text-muted" : projected < 0 ? "text-expense" : ""
-        }`}
-      >
-        {known.length === 0 ? "未登録" : formatYen(projected)}
-        {known.length === 0 ? null : (
-          <span className="ml-1 text-xs font-normal text-muted">
-            （貯金を含んだ金額を表示）
-          </span>
+      <p className="text-xs uppercase tracking-wide text-muted">総資産</p>
+      <p className="mt-1 text-xs text-muted">{remainderLabel}</p>
+      <p className="mt-2 text-2xl font-bold tabular-nums">
+        {known.length === 0 ? (
+          "未登録"
+        ) : (
+          <>
+            {formatYen(withoutSavings)}
+            <span className="ml-1 text-base font-normal text-muted">
+              （{formatYen(withSavings)}）
+            </span>
+          </>
         )}
       </p>
-      <p className="mt-2 text-sm tabular-nums text-muted">
-        いまの総資産 {known.length === 0 ? "未登録" : formatYen(actual)}
-        {" ＋ "}
-        今日より後〜月末の収入 {formatYen(upcomingIncome)}
-        {" − "}
-        今日より後〜月末の支出 {formatYen(upcomingExpense)}
+      <p className="mt-1 text-[11px] text-muted">
+        括弧内は貯金を含んだ総資産です。
+      </p>
+      <p className="mt-3 text-xs text-muted">月末予想額</p>
+      <p
+        className={`text-xl font-bold tabular-nums ${
+          monthEndForecast < 0 ? "text-expense" : ""
+        }`}
+      >
+        {known.length === 0 ? "未登録" : formatYen(monthEndForecast)}
+      </p>
+      <p className="mt-1 text-[11px] text-muted">
+        貯金込みのいまの総資産に、今日よりあと〜月末の取引と、先の日付で入れた日々の収支を足し引きした額です。月末に予定どおり進むと、括弧内の総資産と揃います。
       </p>
     </section>
   );

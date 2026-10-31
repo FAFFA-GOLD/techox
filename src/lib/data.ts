@@ -516,6 +516,53 @@ export function sumLatestTotalAssets(
   return { total: base.balance, asOfDate: base.asOf };
 }
 
+export type CashflowPlanRow = {
+  daily_budget: number;
+  transport_budget: number;
+  adjustment: number;
+};
+
+export type CashflowPeriodRow = CashflowPlanRow & { period_start: string };
+
+export async function fetchCashflowPlan(): Promise<{
+  base: CashflowPlanRow | null;
+  periods: CashflowPeriodRow[];
+  error: string | null;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { base: null, periods: [], error: null };
+  const [baseResult, periodResult] = await Promise.all([
+    supabase
+      .from("cashflow_plan")
+      .select("daily_budget, transport_budget, adjustment")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("cashflow_plan_periods")
+      .select("period_start, daily_budget, transport_budget, adjustment")
+      .eq("user_id", user.id),
+  ]);
+  const error = baseResult.error?.message ?? periodResult.error?.message ?? null;
+  return {
+    base: (baseResult.data as CashflowPlanRow | null) ?? null,
+    periods: (periodResult.data as CashflowPeriodRow[]) ?? [],
+    error,
+  };
+}
+
+export async function fetchScheduledRuleSkips(): Promise<
+  { scheduled_rule_id: string; date: string }[]
+> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("scheduled_rule_skips")
+    .select("scheduled_rule_id, date");
+  return (data as { scheduled_rule_id: string; date: string }[]) ?? [];
+}
+
 export async function fetchSettings(): Promise<UserSettings> {
   const supabase = await createClient();
   const {
