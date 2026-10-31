@@ -527,30 +527,6 @@ export function CalendarClient({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link
-          href={calUrl(monthKey, { date: selectedDate, compare: compareMonth })}
-          className={`rounded-md border px-4 py-2 text-sm ${
-            view === "calendar"
-              ? "border-accent bg-accent text-white"
-              : "border-line bg-white/80 text-muted hover:text-ink"
-          }`}
-        >
-          カレンダー
-        </Link>
-        <Link
-          href={calUrl(monthKey, {
-            view: "list",
-            category: activeListCategoryId,
-            compare: compareMonth,
-          })}
-          className={`rounded-md border px-4 py-2 text-sm ${
-            view === "list"
-              ? "border-accent bg-accent text-white"
-              : "border-line bg-white/80 text-muted hover:text-ink"
-          }`}
-        >
-          用途別一覧
-        </Link>
         <form action="/calendar" className="flex items-center gap-2">
           <input type="hidden" name="month" value={monthKey} />
           {view === "list" ? <input type="hidden" name="view" value="list" /> : null}
@@ -835,15 +811,6 @@ export function CalendarClient({
         compareEntries={compareEntries}
       />
 
-      {view === "list" ? (
-        <DailySpendCategoryList
-          monthKey={monthKey}
-          categories={categories.filter((c) => !isConfidentialCategory(c.name))}
-          entries={entries}
-          categoryId={activeListCategoryId}
-          accounts={accounts}
-        />
-      ) : (
       <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_1fr]">
         <div className="order-1 grid gap-4 lg:col-start-1 lg:row-start-1">
           <div className="overflow-hidden rounded-xl border border-line/80 bg-surface">
@@ -997,6 +964,8 @@ export function CalendarClient({
             isHoliday={selectedIsHoliday}
             isMakikoOff={selectedIsMakikoOff}
             accounts={accounts}
+            monthKey={monthKey}
+            monthEntries={entries}
           />
         </div>
 
@@ -1033,7 +1002,6 @@ export function CalendarClient({
           )}
         </div>
       </div>
-      )}
     </div>
   );
 }
@@ -1045,6 +1013,8 @@ function DayPanel({
   isHoliday,
   isMakikoOff,
   accounts,
+  monthKey,
+  monthEntries,
 }: {
   date: string;
   categories: DailySpendCategory[];
@@ -1052,6 +1022,8 @@ function DayPanel({
   isHoliday: boolean;
   isMakikoOff: boolean;
   accounts: AssetAccount[];
+  monthKey: string;
+  monthEntries: DailySpendEntry[];
 }) {
   const countsInDayTotal = (e: DailySpendEntry) => {
     if (isIncomeEntry(e) || !e.category_id) return false;
@@ -1178,11 +1150,27 @@ function DayPanel({
       </form>
 
       <div className="grid gap-2 rounded-lg border border-line/70 bg-white/70 px-3 py-3">
-        <div>
-          <h3 className="text-sm font-bold">日々の収支</h3>
-          <p className="mt-0.5 text-[11px] text-muted">
-            日付の金額と予算に入る、その日の支出です。
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold">日々の収支</h3>
+            <p className="mt-0.5 text-[11px] text-muted">
+              日付の金額と予算に入る、その日の支出です。
+            </p>
+          </div>
+          <EditPopover
+            buttonLabel="用途別"
+            title="用途別一覧"
+            wide
+            buttonClassName="rounded-md border border-line bg-white px-2.5 py-1 text-xs text-muted hover:text-ink"
+          >
+            <DailySpendCategoryList
+              monthKey={monthKey}
+              categories={categories.filter((c) => !isConfidentialCategory(c.name))}
+              entries={monthEntries}
+              categoryId={categories.find((c) => !isConfidentialCategory(c.name))?.id ?? ""}
+              accounts={accounts}
+            />
+          </EditPopover>
         </div>
         {editing?.scheduled_rule_id ? null : (
           <EntryForm
