@@ -6,9 +6,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { PaydayType, ScheduleKind, ScheduledRule, TransactionKind } from "@/lib/types";
 import {
+  DEFAULT_MAIN_BANK_NAME,
   DEFAULT_SPEND_SOURCE_NAME,
   DEFAULT_TRANSPORT_SOURCE_NAME,
   isFixedCostCategory,
+  isSavingsAccountName,
   isSpendSourceName,
   isTransportCategory,
   isTransportSourceName,
@@ -946,6 +948,28 @@ export async function deleteLoanPayment(formData: FormData) {
   revalidateMoney();
 }
 
+async function resolveDepositAccount(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  requestedId: string | null,
+): Promise<{ id: string | null; error?: string }> {
+  const { data } = await supabase
+    .from("asset_accounts")
+    .select("id, name, kind")
+    .eq("archived", false);
+  const list = (data ?? []) as { id: string; name: string; kind: string }[];
+  const usable = list.filter(
+    (account) =>
+      (account.kind === "bank" || account.kind === "emoney") &&
+      !isSavingsAccountName(account.name),
+  );
+  const picked = usable.find((account) => account.id === requestedId);
+  if (picked) return { id: picked.id };
+  const main = usable.find((account) => account.name === DEFAULT_MAIN_BANK_NAME);
+  const id = main?.id ?? usable.find((account) => account.kind === "bank")?.id ?? null;
+  if (!id) return { id: null, error: "入金先の銀行か電子マネーがありません" };
+  return { id };
+}
+
 async function resolveEntryAccount(
   supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
   categoryName: string,
@@ -994,12 +1018,37 @@ export async function createDailySpendEntry(formData: FormData) {
   const points_amount = parseAmountOrZero(formData.get("points_amount"));
   const category_id = String(formData.get("category_id") ?? "");
   const memo = String(formData.get("memo") ?? "").trim() || null;
+  const kind = String(formData.get("kind") ?? "expense") === "income" ? "income" : "expense";
 
-  if (!date || amount == null || points_amount == null || !category_id) {
+  if (!date || amount == null || points_amount == null) {
+    return { error: "日付・金額・用途を入力してください" };
+  }
+  if (kind === "expense" && !category_id) {
     return { error: "日付・金額・用途を入力してください" };
   }
   if (amount === 0 && points_amount === 0) {
     return { error: "金額かポイント決済のどちらかを入力してください" };
+  }
+
+  if (kind === "income") {
+    const account = await resolveDepositAccount(
+      supabase,
+      parseAssetAccountId(formData.get("asset_account_id")),
+    );
+    if (account.error) return { error: account.error };
+    const { error } = await supabase.from("daily_spend_entries").insert({
+      user_id: user.id,
+      date,
+      amount,
+      points_amount: 0,
+      category_id: null,
+      memo,
+      kind: "income",
+      asset_account_id: account.id,
+    });
+    if (error) return { error: migrationHint(error.message) ?? error.message };
+    revalidateMoney();
+    return { ok: true };
   }
 
   const { data: category } = await supabase
@@ -1037,31 +1086,50 @@ export async function updateDailySpendEntry(formData: FormData) {
   const points_amount = parseAmountOrZero(formData.get("points_amount"));
   const category_id = String(formData.get("category_id") ?? "");
   const memo = String(formData.get("memo") ?? "").trim() || null;
+  const requestedKind = String(formData.get("kind") ?? "");
 
-  if (!id || !date || amount == null || points_amount == null || !category_id) {
+  if (!id || !date || amount == null || points_amount == null) {
+    return { error: "入力内容を確認してください" };
+  }
+
+  const { data: current } = await supabase
+    .from("daily_spend_entries")
+    .select("scheduled_rule_id, date, kind")
+    .eq("id", id)
+    .maybeSingle();
+  const kind =
+    requestedKind === "income" || requestedKind === "expense"
+      ? requestedKind
+      : current?.kind === "income"
+        ? "income"
+        : "expense";
+
+  if (kind === "expense" && !category_id) {
     return { error: "入力内容を確認してください" };
   }
   if (amount === 0 && points_amount === 0) {
     return { error: "金額かポイント決済のどちらかを入力してください" };
   }
 
-  const { data: category } = await supabase
-    .from("daily_spend_categories")
-    .select("name")
-    .eq("id", category_id)
-    .maybeSingle();
-  const account = await resolveEntryAccount(
-    supabase,
-    category?.name ?? "",
-    parseAssetAccountId(formData.get("asset_account_id")),
-  );
+  const account =
+    kind === "income"
+      ? await resolveDepositAccount(
+          supabase,
+          parseAssetAccountId(formData.get("asset_account_id")),
+        )
+      : await (async () => {
+          const { data: category } = await supabase
+            .from("daily_spend_categories")
+            .select("name")
+            .eq("id", category_id)
+            .maybeSingle();
+          return resolveEntryAccount(
+            supabase,
+            category?.name ?? "",
+            parseAssetAccountId(formData.get("asset_account_id")),
+          );
+        })();
   if (account.error) return { error: account.error };
-
-  const { data: current } = await supabase
-    .from("daily_spend_entries")
-    .select("scheduled_rule_id, date")
-    .eq("id", id)
-    .maybeSingle();
 
   const previousDate = current?.date ? String(current.date).slice(0, 10) : "";
   if (current?.scheduled_rule_id && previousDate && previousDate !== date) {
@@ -1080,9 +1148,10 @@ export async function updateDailySpendEntry(formData: FormData) {
     .update({
       date,
       amount,
-      points_amount,
-      category_id,
+      points_amount: kind === "income" ? 0 : points_amount,
+      category_id: kind === "income" ? null : category_id,
       memo,
+      kind,
       asset_account_id: account.id,
       amount_locked: Boolean(current?.scheduled_rule_id),
     })

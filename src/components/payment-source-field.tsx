@@ -5,6 +5,7 @@ import {
   DEFAULT_SPEND_SOURCE_NAME,
   DEFAULT_TRANSPORT_SOURCE_NAME,
   isFixedCostCategory,
+  isSavingsAccountName,
   isTransportCategory,
   SPEND_SOURCE_NAMES,
   TRANSPORT_SOURCE_NAMES,
@@ -34,6 +35,15 @@ export function defaultAccountId(
     ? DEFAULT_TRANSPORT_SOURCE_NAME
     : DEFAULT_SPEND_SOURCE_NAME;
   return allowed.find((a) => a.name === prefer)?.id ?? allowed[0]?.id ?? "";
+}
+
+export function depositAccounts(accounts: AssetAccount[]): AssetAccount[] {
+  return accounts.filter(
+    (account) =>
+      !account.archived &&
+      !isSavingsAccountName(account.name) &&
+      (account.kind === "bank" || account.kind === "emoney"),
+  );
 }
 
 export function PaymentSourceField({
