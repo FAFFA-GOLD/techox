@@ -135,10 +135,52 @@ function ruleSignature(rule: ScheduledRule): string {
     rule.interval_months,
     rule.amount,
     rule.asset_account_id ?? "",
-    rule.category_id ?? "",
     rule.start_date,
     rule.end_date ?? "",
   ].join("|");
+}
+
+/**
+ * 用途だけ空の複製は同じ登録とみなす。用途が違う2件は別のまま残す。
+ * 残すのは用途が入っている方、同じなら先に作った方。
+ */
+export function duplicateScheduledRuleIds(rules: ScheduledRule[]): Set<string> {
+  const groups = new Map<string, ScheduledRule[]>();
+  for (const rule of rules) {
+    const list = groups.get(ruleSignature(rule)) ?? [];
+    list.push(rule);
+    groups.set(ruleSignature(rule), list);
+  }
+  const removed = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const byCategory = new Map<string, ScheduledRule[]>();
+    const blanks: ScheduledRule[] = [];
+    for (const rule of group) {
+      if (!rule.category_id) {
+        blanks.push(rule);
+        continue;
+      }
+      const list = byCategory.get(rule.category_id) ?? [];
+      list.push(rule);
+      byCategory.set(rule.category_id, list);
+    }
+    const clusters = [...byCategory.values()];
+    if (blanks.length > 0) {
+      if (clusters.length === 1) clusters[0].push(...blanks);
+      else clusters.push(blanks);
+    }
+    for (const cluster of clusters) {
+      if (cluster.length < 2) continue;
+      cluster.sort((a, b) => {
+        const categoryRank = Number(!a.category_id) - Number(!b.category_id);
+        if (categoryRank !== 0) return categoryRank;
+        return a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+      });
+      for (const dup of cluster.slice(1)) removed.add(dup.id);
+    }
+  }
+  return removed;
 }
 
 type SpendRow = {
@@ -179,28 +221,15 @@ async function deleteByIds(
 }
 
 /**
- * 移行が重なると、同じ取引と同じ日の収入が2件できる。
- * 名前・金額・日が同じ取引は先に作った1件を残し、同じ日の同じ履歴も1件にする。
+ * 移行が重なると、同じ取引が2件できる。用途だけ空の複製は1件に畳む。
+ * 同じ日の同じ履歴も1件にする。
  */
 async function dedupeScheduledCopies(
   supabase: Db,
   userId: string,
   rules: ScheduledRule[],
 ): Promise<{ rules: ScheduledRule[]; error?: string }> {
-  const groups = new Map<string, ScheduledRule[]>();
-  for (const rule of rules) {
-    const list = groups.get(ruleSignature(rule)) ?? [];
-    list.push(rule);
-    groups.set(ruleSignature(rule), list);
-  }
-  const removed = new Set<string>();
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    group.sort(
-      (a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
-    );
-    for (const dup of group.slice(1)) removed.add(dup.id);
-  }
+  const removed = duplicateScheduledRuleIds(rules);
   if (removed.size > 0) {
     const { data: dupEntries, error: dupEntryError } = await supabase
       .from("daily_spend_entries")
