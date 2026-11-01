@@ -39,7 +39,7 @@ export function CashflowClient({
   const yearGroups = groupRowsByYear(rows);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div>
         <h1 className="text-xl font-bold">キャッシュフロー</h1>
         {now ? (
@@ -113,25 +113,25 @@ export function CashflowClient({
           })}
         </section>
       ) : null}
-      <div className="overflow-x-auto rounded-xl border border-line/80">
-        <table className="min-w-[52rem] w-full text-left text-sm">
+      <div className="min-w-0 overflow-x-auto rounded-xl border border-line/80">
+        <table className="w-full min-w-[48rem] text-left text-sm">
           <thead className="bg-white/80 text-xs text-muted">
             <tr>
-              <th className="px-3 py-2 font-medium">期間</th>
-              <th className="px-3 py-2 font-medium">期首</th>
-              <th className="px-3 py-2 font-medium">収入</th>
-              <th className="px-3 py-2 font-medium">取引の支出</th>
-              <th className="px-3 py-2 font-medium">デイリー</th>
-              <th className="px-3 py-2 font-medium">交通費</th>
-              <th className="px-3 py-2 font-medium">調整</th>
-              <th className="px-3 py-2 font-medium">期末</th>
-              <th className="px-3 py-2 font-medium" />
+              <th className="px-2 py-2 font-medium">期間</th>
+              <th className="px-2 py-2 font-medium">期首</th>
+              <th className="px-2 py-2 font-medium">収入</th>
+              <th className="px-2 py-2 font-medium">取引の支出</th>
+              <th className="px-2 py-2 font-medium">デイリー</th>
+              <th className="px-2 py-2 font-medium">交通費</th>
+              <th className="px-2 py-2 font-medium">調整</th>
+              <th className="px-2 py-2 font-medium">期末</th>
+              <th className="py-2 pl-2 pr-4 font-medium" />
             </tr>
           </thead>
           <tbody>
             {yearGroups.flatMap((group) => [
               <tr key={`year-${group.year}`} id={`cashflow-year-${group.year}`} className="bg-[#eef5f3]">
-                <td colSpan={9} className="px-3 py-2 text-sm font-bold text-accent-deep">
+                <td colSpan={9} className="px-2 py-2 text-sm font-bold text-accent-deep">
                   {group.year}年
                   <span className="ml-2 text-xs font-normal text-muted">
                     {group.rows.length}期
@@ -144,7 +144,7 @@ export function CashflowClient({
                 id={row.phase === "now" ? "cashflow-now" : undefined}
                 className={
                   row.phase === "now"
-                    ? "bg-[#eef5f3] outline outline-2 outline-accent"
+                    ? "bg-[#eef5f3] ring-2 ring-inset ring-accent"
                     : row.phase === "past"
                       ? "bg-white/40 text-muted"
                       : row.ending < 0
@@ -152,7 +152,7 @@ export function CashflowClient({
                         : "bg-white/70"
                 }
               >
-                <td className="px-3 py-2 whitespace-nowrap">
+                <td className="px-2 py-2 whitespace-nowrap">
                   {row.phase === "now" ? (
                     <span className="mr-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
                       いま
@@ -164,17 +164,17 @@ export function CashflowClient({
                   ) : null}
                   {row.period.label}
                 </td>
-                <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                <td className="px-2 py-2 tabular-nums whitespace-nowrap">
                   {row.phase === "past" ? "実績" : pair(row.opening)}
                 </td>
-                <td className="px-3 py-2 tabular-nums text-income">{formatYen(row.income)}</td>
-                <td className="px-3 py-2 tabular-nums text-expense">
+                <td className="px-2 py-2 tabular-nums text-income">{formatYen(row.income)}</td>
+                <td className="px-2 py-2 tabular-nums text-expense">
                   {formatYen(row.scheduledExpense)}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{formatYen(row.daily)}</td>
-                <td className="px-3 py-2 tabular-nums">{formatYen(row.transport)}</td>
-                <td className="px-3 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
+                <td className="px-2 py-2 tabular-nums">{formatYen(row.daily)}</td>
+                <td className="px-2 py-2 tabular-nums">{formatYen(row.transport)}</td>
+                <td className="px-2 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
+                <td className="px-2 py-2 whitespace-nowrap">
                   {row.phase === "past" || !row.breakdown ? (
                     "実績"
                   ) : (
@@ -192,7 +192,7 @@ export function CashflowClient({
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">
+                <td className="py-2 pl-2 pr-4 whitespace-nowrap">
                   <EditPopover buttonLabel="編集" title="この期の予算">
                     <PeriodForm
                       periodStart={row.period.start}
