@@ -445,6 +445,20 @@ async function insertLockedSeeds(
   return {};
 }
 
+async function finishOccurrenceCheck(
+  supabase: Db,
+  userId: string,
+  stampColumnMissing: boolean,
+): Promise<{ error?: string }> {
+  const result = await ensureFutureOccurrences(supabase, userId);
+  if (result.error || stampColumnMissing) return result;
+  await supabase
+    .from("user_settings")
+    .update({ schedules_checked_on: todayKeyInTimeZone() })
+    .eq("user_id", userId);
+  return result;
+}
+
 function monthKey(date: string): string {
   return date.slice(0, 7);
 }
@@ -459,12 +473,27 @@ export async function ensureSchedulesMigrated(
   categories: DailySpendCategory[],
   accounts: AssetAccount[],
 ): Promise<{ error?: string }> {
-  const { data: settings, error: settingsError } = await supabase
+  const today = todayKeyInTimeZone();
+  const stamped = await supabase
     .from("user_settings")
-    .select("schedules_migrated")
+    .select("schedules_migrated, schedules_checked_on")
     .eq("user_id", userId)
     .maybeSingle();
-  if (settingsError) return { error: settingsError.message };
+  const stampColumnMissing = Boolean(
+    stamped.error?.message.includes("schedules_checked_on"),
+  );
+  const settingsResult = stampColumnMissing
+    ? await supabase
+        .from("user_settings")
+        .select("schedules_migrated")
+        .eq("user_id", userId)
+        .maybeSingle()
+    : stamped;
+  if (settingsResult.error) return { error: settingsResult.error.message };
+  const settings = settingsResult.data as {
+    schedules_migrated?: boolean;
+    schedules_checked_on?: string | null;
+  } | null;
   if (!settings) {
     const { error: insertSettingsError } = await supabase
       .from("user_settings")
@@ -472,7 +501,9 @@ export async function ensureSchedulesMigrated(
     if (insertSettingsError) return { error: insertSettingsError.message };
   }
   if (settings?.schedules_migrated) {
-    return ensureFutureOccurrences(supabase, userId);
+    const checked = String(settings.schedules_checked_on ?? "").slice(0, 10);
+    if (!stampColumnMissing && checked === today) return {};
+    return finishOccurrenceCheck(supabase, userId, stampColumnMissing);
   }
 
   const { count: existingRules, error: countError } = await supabase
@@ -486,7 +517,7 @@ export async function ensureSchedulesMigrated(
       .update({ schedules_migrated: true })
       .eq("user_id", userId);
     if (flagError) return { error: flagError.message };
-    return ensureFutureOccurrences(supabase, userId);
+    return finishOccurrenceCheck(supabase, userId, false);
   }
 
   const fixed =
