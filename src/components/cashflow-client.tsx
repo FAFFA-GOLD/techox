@@ -125,7 +125,7 @@ export function CashflowClient({
               <th className="px-2 py-2 font-medium">交通費</th>
               <th className="px-2 py-2 font-medium">調整</th>
               <th className="px-2 py-2 font-medium">期末</th>
-              <th className="py-2 pl-2 pr-4 font-medium" />
+              <th className="sticky right-0 z-10 bg-white py-2 pl-2 pr-3 font-medium" />
             </tr>
           </thead>
           <tbody>
@@ -153,16 +153,12 @@ export function CashflowClient({
                 }
               >
                 <td className="px-2 py-2 whitespace-nowrap">
-                  {row.phase === "now" ? (
-                    <span className="mr-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
-                      いま
-                    </span>
-                  ) : row.phase === "past" ? (
+                  {row.phase === "past" ? (
                     <span className="mr-2 rounded-full border border-line px-2 py-0.5 text-[10px]">
                       済
                     </span>
                   ) : null}
-                  {row.period.label}
+                  {monthDayLabel(row.period.start, row.period.end)}
                 </td>
                 <td className="px-2 py-2 tabular-nums whitespace-nowrap">
                   {row.phase === "past" ? "実績" : pair(row.opening)}
@@ -192,7 +188,15 @@ export function CashflowClient({
                     </div>
                   )}
                 </td>
-                <td className="py-2 pl-2 pr-4 whitespace-nowrap">
+                <td
+                  className={`sticky right-0 z-10 py-2 pl-2 pr-3 whitespace-nowrap shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)] ${
+                    row.phase === "now"
+                      ? "bg-[#eef5f3]"
+                      : row.ending < 0
+                        ? "bg-red-50"
+                        : "bg-white"
+                  }`}
+                >
                   <EditPopover buttonLabel="編集" title="この期の予算">
                     <PeriodForm
                       periodStart={row.period.start}
@@ -212,6 +216,14 @@ export function CashflowClient({
       </div>
     </div>
   );
+}
+
+function monthDayLabel(start: string, end: string): string {
+  const fmt = (iso: string) => {
+    const [, month, day] = iso.split("-");
+    return `${Number(month)}月${Number(day)}日`;
+  };
+  return `${fmt(start)}〜${fmt(end)}`;
 }
 
 function groupRowsByYear(rows: CashflowRow[]): { year: string; rows: CashflowRow[] }[] {
