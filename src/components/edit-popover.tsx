@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   buttonLabel?: React.ReactNode;
@@ -24,20 +25,21 @@ export function EditPopover({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={
+          className={
           buttonClassName ??
-          "rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+          "whitespace-nowrap rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
         }
       >
         {buttonLabel}
       </button>
-      {open ? (
+      {open
+        ? createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center"
+          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-3 sm:items-center sm:p-4"
           onClick={() => setOpen(false)}
         >
           <div
-            className={`grid max-h-[85dvh] w-full gap-3 overflow-y-auto rounded-xl border border-line bg-white p-4 ${
+            className={`my-auto grid max-h-[85dvh] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-auto rounded-xl border border-line bg-white p-4 ${
               wide ? "max-w-3xl" : "max-w-md"
             }`}
             onClick={(event) => event.stopPropagation()}
@@ -56,8 +58,10 @@ export function EditPopover({
             </div>
             {children}
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

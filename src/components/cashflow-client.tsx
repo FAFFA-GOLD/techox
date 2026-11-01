@@ -186,18 +186,14 @@ export function CashflowClient({
                       >
                         {pair(row.ending)}
                       </span>
-                      <EditPopover
-                        wide
-                        title={`${row.period.label} の期末`}
-                        buttonLabel="内訳"
-                      >
+                      <EditPopover title={`${row.period.label} の期末`} buttonLabel="内訳">
                         <EndingBreakdown breakdown={row.breakdown} savings={savings} />
                       </EditPopover>
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2">
-                  <EditPopover buttonLabel={row.custom ? "この期を編集済" : "この期だけ"} title="この期の予算">
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <EditPopover buttonLabel="編集" title="この期の予算">
                     <PeriodForm
                       periodStart={row.period.start}
                       label={row.period.label}
@@ -251,7 +247,7 @@ function BasePlanForm({
       <div>
         <h2 className="text-sm font-bold">基本の毎月見込み</h2>
         <p className="mt-1 text-xs text-muted">
-          先の期間は同じ金額です。各期の「この期だけ」で、その期間だけ変えられます。
+          先の期間は同じ金額です。各期の「編集」で、その期間だけ変えられます。
           {saved ? "" : " 初期値はいまのデイリー予算と交通費予算です。"}
         </p>
       </div>
@@ -340,68 +336,64 @@ function EndingBreakdown({
       <p className="text-xs text-muted">
         今日の各部門に、この期末までに入る予定の入出金を足しています。デイリー・交通費・調整は部門が決まっていないので、あとからまとめて引いています。
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="text-muted">
-            <tr>
-              <th className="py-1 pr-3 font-medium">部門</th>
-              <th className="py-1 pr-3 font-medium">今日</th>
-              <th className="py-1 pr-3 font-medium">この先</th>
-              <th className="py-1 font-medium">期末</th>
-            </tr>
-          </thead>
-          <tbody>
-            {breakdown.accounts.map((line) => (
-              <tr key={line.name} className="border-t border-line">
-                <td className="py-1 pr-3">
-                  {line.name}
-                  {line.savings ? <span className="ml-1 text-muted">貯金</span> : null}
-                </td>
-                <td className="py-1 pr-3 tabular-nums">{formatYen(line.now)}</td>
-                <td className="py-1 pr-3 tabular-nums">
-                  {line.change === 0 ? "—" : formatYen(line.change)}
-                </td>
-                <td className="py-1 font-medium tabular-nums">{formatYen(line.ending)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ul className="grid text-xs">
+        {breakdown.accounts.map((line) => (
+          <li key={line.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 border-t border-line py-1.5">
+            <div className="min-w-0">
+              <p className="truncate">
+                {line.name}
+                {line.savings ? <span className="ml-1 text-muted">貯金</span> : null}
+              </p>
+              <p className="text-[11px] text-muted">
+                今日 {formatYen(line.now)}
+                <span className="mx-1">/</span>
+                この先 {line.change === 0 ? "—" : formatYen(line.change)}
+              </p>
+            </div>
+            <p className="font-medium tabular-nums">{formatYen(line.ending)}</p>
+          </li>
+        ))}
+      </ul>
       <dl className="grid gap-1 text-xs">
-        <div className="flex justify-between gap-3">
-          <dt>部門の合計</dt>
-          <dd className="tabular-nums">{formatYen(departments)}</dd>
-        </div>
+        <BreakdownLine label="部門の合計" amount={formatYen(departments)} />
         {breakdown.unassigned !== 0 ? (
-          <div className="flex justify-between gap-3">
-            <dt>部門が未設定の入出金</dt>
-            <dd className="tabular-nums">{formatYen(breakdown.unassigned)}</dd>
-          </div>
+          <BreakdownLine label="部門なし" amount={formatYen(breakdown.unassigned)} />
         ) : null}
-        <div className="flex justify-between gap-3">
-          <dt>デイリー（いまからこの期末まで）</dt>
-          <dd className="tabular-nums text-expense">-{formatYen(breakdown.daily)}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>交通費（いまからこの期末まで）</dt>
-          <dd className="tabular-nums text-expense">-{formatYen(breakdown.transport)}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt>調整（いまからこの期末まで）</dt>
-          <dd className={`tabular-nums ${breakdown.adjustment > 0 ? "text-expense" : ""}`}>
-            {breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}
-            {formatYen(Math.abs(breakdown.adjustment))}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3 border-t border-line pt-1 text-sm font-semibold">
-          <dt>期末（括弧内）</dt>
-          <dd className="tabular-nums">{formatYen(breakdown.total)}</dd>
-        </div>
-        <div className="flex justify-between gap-3 font-semibold">
-          <dt>今日の貯金 {formatYen(savings)} を除いた額</dt>
-          <dd className="tabular-nums">{formatYen(breakdown.total - savings)}</dd>
-        </div>
+        <BreakdownLine label="デイリー" amount={`-${formatYen(breakdown.daily)}`} expense />
+        <BreakdownLine label="交通費" amount={`-${formatYen(breakdown.transport)}`} expense />
+        <BreakdownLine
+          label="調整"
+          amount={`${breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}${formatYen(Math.abs(breakdown.adjustment))}`}
+          expense={breakdown.adjustment > 0}
+        />
+        <BreakdownLine label="貯金込み" amount={formatYen(breakdown.total)} strong rule />
+        <BreakdownLine label="貯金を除く" amount={formatYen(breakdown.total - savings)} strong />
       </dl>
+    </div>
+  );
+}
+
+function BreakdownLine({
+  label,
+  amount,
+  expense = false,
+  strong = false,
+  rule = false,
+}: {
+  label: string;
+  amount: string;
+  expense?: boolean;
+  strong?: boolean;
+  rule?: boolean;
+}) {
+  return (
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 ${
+        rule ? "border-t border-line pt-1" : ""
+      } ${strong ? "text-sm font-semibold" : ""}`}
+    >
+      <dt className="min-w-0">{label}</dt>
+      <dd className={`tabular-nums ${expense ? "text-expense" : ""}`}>{amount}</dd>
     </div>
   );
 }
