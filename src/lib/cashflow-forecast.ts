@@ -20,6 +20,24 @@ export type CashflowEvent = {
   kind: "income" | "expense";
   categoryName: string | null;
   scheduledRuleId: string | null;
+  accountId: string | null;
+};
+
+export type CashflowAccountLine = {
+  name: string;
+  now: number;
+  change: number;
+  ending: number;
+  savings: boolean;
+};
+
+export type CashflowEndingBreakdown = {
+  accounts: CashflowAccountLine[];
+  unassigned: number;
+  daily: number;
+  transport: number;
+  adjustment: number;
+  total: number;
 };
 
 export type CashflowRow = {
@@ -37,6 +55,7 @@ export type CashflowRow = {
   custom: boolean;
   /** past は起点以降で、すでに終わった期間。期首と期末は出さない。 */
   phase: "past" | "now" | "future";
+  breakdown: CashflowEndingBreakdown | null;
 };
 
 function addDays(iso: string, days: number): string {
@@ -63,6 +82,7 @@ export function buildCashflowRows(input: {
   overrides: { periodStart: string; amounts: CashflowPlanAmounts }[];
   spentDaily: number;
   spentTransport: number;
+  accounts: { id: string; name: string; balance: number; savings: boolean }[];
 }): CashflowRow[] {
   const overrideByStart = new Map(
     input.overrides.map((row) => [row.periodStart, row.amounts]),
@@ -88,11 +108,15 @@ export function buildCashflowRows(input: {
         kind: rule.flow === "income" ? "income" : "expense",
         categoryName: null,
         scheduledRuleId: rule.id,
+        accountId: rule.asset_account_id,
       });
     }
   }
   const events = [...input.events, ...synthetic];
   let opening = input.opening;
+  let cumDaily = 0;
+  let cumTransport = 0;
+  let cumAdjustment = 0;
   return input.periods.map((period) => {
     const custom = overrideByStart.get(period.start);
     const plan = custom ?? input.base;
@@ -146,6 +170,7 @@ export function buildCashflowRows(input: {
         ending: 0,
         custom: Boolean(custom),
         phase,
+        breakdown: null,
       };
     }
     let daily = plan.daily;
@@ -156,6 +181,9 @@ export function buildCashflowRows(input: {
     }
     const ending =
       opening + income - scheduledExpense - extraExpense - daily - transport - plan.adjustment;
+    cumDaily += daily;
+    cumTransport += transport;
+    cumAdjustment += plan.adjustment;
     const row: CashflowRow = {
       period,
       opening,
@@ -170,10 +198,76 @@ export function buildCashflowRows(input: {
       ending,
       custom: Boolean(custom),
       phase,
+      breakdown: endingBreakdown(
+        input.accounts,
+        events,
+        input.today,
+        period.end,
+        cumDaily,
+        cumTransport,
+        cumAdjustment,
+      ),
     };
     opening = ending;
     return row;
   });
+}
+
+function endingBreakdown(
+  accounts: { id: string; name: string; balance: number; savings: boolean }[],
+  events: CashflowEvent[],
+  today: string,
+  through: string,
+  daily: number,
+  transport: number,
+  adjustment: number,
+): CashflowEndingBreakdown {
+  const change = new Map<string, number>();
+  let unassigned = 0;
+  for (const event of events) {
+    if (event.date <= today || event.date > through) continue;
+    if (event.date < CASHFLOW_HISTORY_CUTOFF) continue;
+    const pocket =
+      event.categoryName != null && isPocketSpendCategory(event.categoryName);
+    const transportCategory =
+      event.categoryName != null && isTransportCategory(event.categoryName);
+    let delta = 0;
+    if (event.kind === "income") delta = event.amount;
+    else if (event.scheduledRuleId) delta = -event.amount;
+    else if (pocket || transportCategory) continue;
+    else delta = -event.amount;
+    if (!event.accountId) unassigned += delta;
+    else change.set(event.accountId, (change.get(event.accountId) ?? 0) + delta);
+  }
+  const lines = accounts.map((account) => {
+    const moved = change.get(account.id) ?? 0;
+    change.delete(account.id);
+    return {
+      name: account.name,
+      now: account.balance,
+      change: moved,
+      ending: account.balance + moved,
+      savings: account.savings,
+    };
+  });
+  for (const [id, moved] of change) {
+    lines.push({
+      name: id,
+      now: 0,
+      change: moved,
+      ending: moved,
+      savings: false,
+    });
+  }
+  const accountTotal = lines.reduce((sum, line) => sum + line.ending, 0) + unassigned;
+  return {
+    accounts: lines,
+    unassigned,
+    daily,
+    transport,
+    adjustment,
+    total: accountTotal - daily - transport - adjustment,
+  };
 }
 
 export function defaultCashflowPlan(

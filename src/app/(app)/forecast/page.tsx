@@ -80,6 +80,7 @@ export default async function ForecastPage() {
       kind: entry.kind === "income" ? "income" : "expense",
       categoryName: name,
       scheduledRuleId: entry.scheduled_rule_id ?? null,
+      accountId: entry.asset_account_id ?? null,
     };
   });
   const fallback = defaultCashflowPlan(categories, today.slice(0, 7));
@@ -108,6 +109,12 @@ export default async function ForecastPage() {
     })),
     spentDaily,
     spentTransport,
+    accounts: known.map((row) => ({
+      id: row.id,
+      name: row.name,
+      balance: row.balance ?? 0,
+      savings: isSavingsAccountName(row.name),
+    })),
   });
   return (
     <CashflowClient

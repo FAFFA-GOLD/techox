@@ -3,7 +3,11 @@
 import { useState, useTransition } from "react";
 import { saveCashflowPeriod, saveCashflowPlan } from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
-import type { CashflowPlanAmounts, CashflowRow } from "@/lib/cashflow-forecast";
+import type {
+  CashflowEndingBreakdown,
+  CashflowPlanAmounts,
+  CashflowRow,
+} from "@/lib/cashflow-forecast";
 import { formatYen } from "@/lib/money";
 
 export function CashflowClient({
@@ -170,12 +174,27 @@ export function CashflowClient({
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.daily)}</td>
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.transport)}</td>
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
-                <td
-                  className={`px-3 py-2 font-semibold tabular-nums whitespace-nowrap ${
-                    row.phase !== "past" && row.ending - savings < 0 ? "text-expense" : ""
-                  }`}
-                >
-                  {row.phase === "past" ? "実績" : pair(row.ending)}
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {row.phase === "past" || !row.breakdown ? (
+                    "実績"
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          row.ending - savings < 0 ? "text-expense" : ""
+                        }`}
+                      >
+                        {pair(row.ending)}
+                      </span>
+                      <EditPopover
+                        wide
+                        title={`${row.period.label} の期末`}
+                        buttonLabel="内訳"
+                      >
+                        <EndingBreakdown breakdown={row.breakdown} savings={savings} />
+                      </EditPopover>
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <EditPopover buttonLabel={row.custom ? "この期を編集済" : "この期だけ"} title="この期の予算">
@@ -305,6 +324,85 @@ function PeriodForm({
         </button>
       ) : null}
     </form>
+  );
+}
+
+function EndingBreakdown({
+  breakdown,
+  savings,
+}: {
+  breakdown: CashflowEndingBreakdown;
+  savings: number;
+}) {
+  const departments = breakdown.accounts.reduce((sum, line) => sum + line.ending, 0);
+  return (
+    <div className="grid gap-3 text-sm">
+      <p className="text-xs text-muted">
+        今日の各部門に、この期末までに入る予定の入出金を足しています。デイリー・交通費・調整は部門が決まっていないので、あとからまとめて引いています。
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="text-muted">
+            <tr>
+              <th className="py-1 pr-3 font-medium">部門</th>
+              <th className="py-1 pr-3 font-medium">今日</th>
+              <th className="py-1 pr-3 font-medium">この先</th>
+              <th className="py-1 font-medium">期末</th>
+            </tr>
+          </thead>
+          <tbody>
+            {breakdown.accounts.map((line) => (
+              <tr key={line.name} className="border-t border-line">
+                <td className="py-1 pr-3">
+                  {line.name}
+                  {line.savings ? <span className="ml-1 text-muted">貯金</span> : null}
+                </td>
+                <td className="py-1 pr-3 tabular-nums">{formatYen(line.now)}</td>
+                <td className="py-1 pr-3 tabular-nums">
+                  {line.change === 0 ? "—" : formatYen(line.change)}
+                </td>
+                <td className="py-1 font-medium tabular-nums">{formatYen(line.ending)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <dl className="grid gap-1 text-xs">
+        <div className="flex justify-between gap-3">
+          <dt>部門の合計</dt>
+          <dd className="tabular-nums">{formatYen(departments)}</dd>
+        </div>
+        {breakdown.unassigned !== 0 ? (
+          <div className="flex justify-between gap-3">
+            <dt>部門が未設定の入出金</dt>
+            <dd className="tabular-nums">{formatYen(breakdown.unassigned)}</dd>
+          </div>
+        ) : null}
+        <div className="flex justify-between gap-3">
+          <dt>デイリー（いまからこの期末まで）</dt>
+          <dd className="tabular-nums text-expense">-{formatYen(breakdown.daily)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>交通費（いまからこの期末まで）</dt>
+          <dd className="tabular-nums text-expense">-{formatYen(breakdown.transport)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>調整（いまからこの期末まで）</dt>
+          <dd className={`tabular-nums ${breakdown.adjustment > 0 ? "text-expense" : ""}`}>
+            {breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}
+            {formatYen(Math.abs(breakdown.adjustment))}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3 border-t border-line pt-1 text-sm font-semibold">
+          <dt>期末（括弧内）</dt>
+          <dd className="tabular-nums">{formatYen(breakdown.total)}</dd>
+        </div>
+        <div className="flex justify-between gap-3 font-semibold">
+          <dt>今日の貯金 {formatYen(savings)} を除いた額</dt>
+          <dd className="tabular-nums">{formatYen(breakdown.total - savings)}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 
