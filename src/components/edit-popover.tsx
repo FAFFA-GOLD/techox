@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 type Props = {
-  buttonLabel?: string;
+  buttonLabel?: React.ReactNode;
   title: string;
   wide?: boolean;
   buttonClassName?: string;
