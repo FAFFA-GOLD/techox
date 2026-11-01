@@ -174,20 +174,26 @@ export function CashflowClient({
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.daily)}</td>
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.transport)}</td>
                 <td className="px-3 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 whitespace-nowrap">
                   {row.phase === "past" || !row.breakdown ? (
                     "実績"
                   ) : (
-                    <EditPopover
-                      wide
-                      title={`${row.period.label} の期末`}
-                      buttonClassName={`font-semibold tabular-nums whitespace-nowrap underline decoration-dotted underline-offset-4 ${
-                        row.ending - savings < 0 ? "text-expense" : ""
-                      }`}
-                      buttonLabel={pair(row.ending)}
-                    >
-                      <EndingBreakdown breakdown={row.breakdown} savings={savings} />
-                    </EditPopover>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          row.ending - savings < 0 ? "text-expense" : ""
+                        }`}
+                      >
+                        {pair(row.ending)}
+                      </span>
+                      <EditPopover
+                        wide
+                        title={`${row.period.label} の期末`}
+                        buttonLabel="内訳"
+                      >
+                        <EndingBreakdown breakdown={row.breakdown} savings={savings} />
+                      </EditPopover>
+                    </div>
                   )}
                 </td>
                 <td className="px-3 py-2">
