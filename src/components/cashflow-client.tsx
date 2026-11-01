@@ -124,14 +124,15 @@ export function CashflowClient({
               <th className="px-2 py-2 font-medium">デイリー</th>
               <th className="px-2 py-2 font-medium">交通費</th>
               <th className="px-2 py-2 font-medium">調整</th>
-              <th className="px-2 py-2 font-medium">期末</th>
-              <th className="sticky right-0 z-10 bg-white py-2 pl-2 pr-3 font-medium" />
+              <th className="px-2 py-2 text-right font-medium">期末</th>
+              <th className="px-2 py-2 font-medium" />
+              <th className="sticky right-0 z-10 bg-white py-2 pl-2 pr-5 font-medium" />
             </tr>
           </thead>
           <tbody>
             {yearGroups.flatMap((group) => [
               <tr key={`year-${group.year}`} id={`cashflow-year-${group.year}`} className="bg-[#eef5f3]">
-                <td colSpan={9} className="px-2 py-2 text-sm font-bold text-accent-deep">
+                <td colSpan={10} className="px-2 py-2 text-sm font-bold text-accent-deep">
                   {group.year}年
                   <span className="ml-2 text-xs font-normal text-muted">
                     {group.rows.length}期
@@ -170,31 +171,27 @@ export function CashflowClient({
                 <td className="px-2 py-2 tabular-nums">{formatYen(row.daily)}</td>
                 <td className="px-2 py-2 tabular-nums">{formatYen(row.transport)}</td>
                 <td className="px-2 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
+                <td
+                  className={`px-2 py-2 text-right font-semibold tabular-nums whitespace-nowrap ${
+                    row.phase !== "past" && row.ending - savings < 0 ? "text-expense" : ""
+                  }`}
+                >
+                  {row.phase === "past" ? "実績" : pair(row.ending)}
+                </td>
                 <td className="px-2 py-2 whitespace-nowrap">
-                  {row.phase === "past" || !row.breakdown ? (
-                    "実績"
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`font-semibold tabular-nums ${
-                          row.ending - savings < 0 ? "text-expense" : ""
-                        }`}
-                      >
-                        {pair(row.ending)}
-                      </span>
-                      <EditPopover title={`${row.period.label} の期末`} buttonLabel="内訳">
-                        <EndingBreakdown breakdown={row.breakdown} savings={savings} />
-                      </EditPopover>
-                    </div>
+                  {row.phase === "past" || !row.breakdown ? null : (
+                    <EditPopover title={`${row.period.label} の期末`} buttonLabel="内訳">
+                      <EndingBreakdown breakdown={row.breakdown} savings={savings} />
+                    </EditPopover>
                   )}
                 </td>
                 <td
-                  className={`sticky right-0 z-10 py-2 pl-2 pr-3 whitespace-nowrap shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)] ${
+                  className={`sticky right-0 z-10 py-2 pl-2 pr-5 whitespace-nowrap ${
                     row.phase === "now"
-                      ? "bg-[#eef5f3]"
+                      ? "bg-[#eef5f3] shadow-[inset_0_2px_0_0_#0f766e,inset_0_-2px_0_0_#0f766e,inset_-2px_0_0_0_#0f766e]"
                       : row.ending < 0
-                        ? "bg-red-50"
-                        : "bg-white"
+                        ? "bg-red-50 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"
+                        : "bg-white shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"
                   }`}
                 >
                   <EditPopover buttonLabel="編集" title="この期の予算">
