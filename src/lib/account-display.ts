@@ -112,8 +112,8 @@ export function buildAccountBalanceViews(
       let appliedExpense = 0;
       for (const row of movements) {
         if (row.asset_account_id !== account.id) continue;
-        // 手入力した日以降〜今日までを足し引きする。今日より先の予定は入れない。
-        if (row.date < base.asOf || row.date > asOfCap) continue;
+        // 手入力はその時点の残高。同じ日の入出金は引き直さない。翌日〜今日だけ足し引きする。
+        if (row.date <= base.asOf || row.date > asOfCap) continue;
         const amount = asYen(row.amount);
         if (row.kind === "income") {
           balance += amount;
