@@ -899,12 +899,13 @@ export async function fetchBalanceMovementsSince(
     amount: number;
     kind: string;
     asset_account_id: string | null;
+    created_at: string | null;
   }[]
 > {
   const supabase = await createClient();
   let query = supabase
     .from("daily_spend_entries")
-    .select("date, amount, kind, asset_account_id")
+    .select("date, amount, kind, asset_account_id, created_at")
     .gte("date", sinceExclusive)
     .not("asset_account_id", "is", null);
   if (untilInclusive) query = query.lte("date", untilInclusive);
