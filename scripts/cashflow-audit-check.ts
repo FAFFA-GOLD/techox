@@ -103,7 +103,8 @@ function check(label: string, useAllocation: boolean) {
   const sheets = xml.match(/<Worksheet /g) ?? [];
   if (sheets.length !== 5) gaps.push(`${label} シート ${sheets.length}`);
   if (!xml.includes("家へ") || !xml.includes("JCB")) gaps.push(`${label} 明細の固定費`);
-  if (!xml.includes('ss:Formula="=SUMIFS(明細!G:G')) gaps.push(`${label} 数式`);
+  if (!xml.includes("サムイフス('明細'!G:G")) gaps.push(`${label} 数式`);
+  if (xml.includes("SUMIF(") || xml.includes("SUMIFS(") || xml.includes("=SUM(")) gaps.push(`${label} 英語の関数`);
   if (gaps.length > 0) {
     console.error(label, gaps);
     process.exitCode = 1;

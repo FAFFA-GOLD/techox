@@ -29,7 +29,7 @@ export function buildCashflowWorkbookXml(input: {
   const departments = departmentList(input.accounts, input.lines);
   const built = buildDepartmentRows(projected, input.lines, departments, input.accounts);
   const sheets = [
-    worksheet("期間", periodRows(projected, built.rows)),
+    worksheet("期間", periodRows(projected, built.rows, departments.length)),
     worksheet("部門", departmentSheetRows(built.rows, departments.length)),
     worksheet("明細", detailRows(input.lines)),
     worksheet("残高", balanceRows(input.accounts)),
@@ -192,7 +192,11 @@ function guideRows(today: string): string[][] {
   return lines.map((line) => [textCell(line)]);
 }
 
-function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[]): string[][] {
+function periodRows(
+  projected: CashflowRow[],
+  departments: DepartmentSheetRow[],
+  departmentCount: number,
+): string[][] {
   const header = [
     "期間",
     "開始",
@@ -218,19 +222,18 @@ function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[])
     const opening = sum((line) => line.opening);
     const kindSum = (kind: Kind) => sum((line) => line.amounts[kind]);
     const ending = sum((line) => line.ending);
+    const first = 2 + index * departmentCount;
+    const last = first + departmentCount - 1;
+    const sumColumn = (column: string, value: number) =>
+      departmentCount <= 0
+        ? numberCell(value)
+        : formulaNumber(`=サム('部門'!${column}${first}:${column}${last})`, value);
     return [
       textCell(row.period.label),
       textCell(row.period.start),
       textCell(row.period.end),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!D:D)`, opening),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!E:E)`, kindSum("給料")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!F:F)`, kindSum("広告収入")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!G:G)`, kindSum("その他収入")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!H:H)`, kindSum("固定費")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!I:I)`, kindSum("その他支出")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!J:J)`, kindSum("デイリー")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!K:K)`, kindSum("交通費")),
-      formulaNumber(`=SUMIF(部門!A:A,B${excelRow},部門!L:L)`, kindSum("調整")),
+      sumColumn("D", opening),
+      ...KINDS.map((kind, kindIndex) => sumColumn(String.fromCharCode("E".charCodeAt(0) + kindIndex), kindSum(kind))),
       formulaNumber(`=D${excelRow}+E${excelRow}+F${excelRow}+G${excelRow}+H${excelRow}+I${excelRow}+J${excelRow}+K${excelRow}+L${excelRow}`, ending),
       numberCell(row.ending),
       formulaNumber(`=M${excelRow}-N${excelRow}`, ending - row.ending),
@@ -263,7 +266,7 @@ function departmentSheetRows(rows: DepartmentSheetRow[], departmentCount: number
     const previous = index >= departmentCount ? excelRow - departmentCount : 0;
     const kindCells = KINDS.map((kind) =>
       formulaNumber(
-        `=SUMIFS(明細!G:G,明細!A:A,A${excelRow},明細!D:D,C${excelRow},明細!E:E,"${kind}")`,
+        `=サムイフス('明細'!G:G,'明細'!A:A,A${excelRow},'明細'!D:D,C${excelRow},'明細'!E:E,"${kind}")`,
         row.amounts[kind],
       ),
     );
@@ -334,7 +337,7 @@ function balanceRows(accounts: CashflowWorkbookAccount[]): string[][] {
   body.push([
     textCell("合計", "h"),
     lastDataRow >= 2
-      ? formulaNumber(`=SUM(B2:B${lastDataRow})`, cachedTotal)
+      ? formulaNumber(`=サム(B2:B${lastDataRow})`, cachedTotal)
       : numberCell(0),
     textCell(""),
   ]);
