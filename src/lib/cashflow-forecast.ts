@@ -45,6 +45,28 @@ export type CashflowEvent = {
   categoryName: string | null;
   scheduledRuleId: string | null;
   accountId: string | null;
+  /** 確認表に出す名前。メモ、取引名、用途の順で入る */
+  label?: string | null;
+};
+
+export type CashflowAuditKind =
+  | "給料"
+  | "広告収入"
+  | "その他収入"
+  | "固定費"
+  | "その他支出"
+  | "デイリー"
+  | "交通費"
+  | "調整";
+
+export type CashflowAuditLine = {
+  periodStart: string;
+  periodEnd: string;
+  date: string;
+  accountName: string;
+  kind: CashflowAuditKind;
+  item: string;
+  amount: number;
 };
 
 export type CashflowAccountLine = {
@@ -115,6 +137,8 @@ export function buildCashflowRows(input: {
   periodAllocations?: CashflowPeriodAllocation[];
   dailyAccountId?: string | null;
   transportAccountId?: string | null;
+  /** 確認用エクセルの明細。画面には出さない */
+  audit?: { lines: CashflowAuditLine[] };
 }): CashflowRow[] {
   const overrideByStart = new Map(
     input.overrides.map((row) => [row.periodStart, row.amounts]),
@@ -141,10 +165,12 @@ export function buildCashflowRows(input: {
         categoryName: null,
         scheduledRuleId: rule.id,
         accountId: rule.asset_account_id,
+        label: rule.name,
       });
     }
   }
   const events = [...input.events, ...synthetic];
+  const ruleNames = new Map(input.rules.map((rule) => [rule.id, rule.name]));
   let opening = input.opening;
   let cumDaily = 0;
   let cumTransport = 0;
@@ -165,13 +191,21 @@ export function buildCashflowRows(input: {
     let spentPocket = 0;
     let spentTransport = 0;
     const incomeByRule = new Map<string, number>();
-    const plainIncome: { accountId: string | null; amount: number }[] = [];
-    const ruledIncome = new Map<string, { accountId: string | null; amount: number }[]>();
-    const expenseHits: { accountId: string | null; amount: number }[] = [];
+    const plainIncome: MoneyHit[] = [];
+    const ruledIncome = new Map<string, MoneyHit[]>();
+    const expenseHits: MoneyHit[] = [];
     for (const event of events) {
       if (event.date < CASHFLOW_HISTORY_CUTOFF) continue;
       if (phase === "past" && event.date > input.today) continue;
       if (!inRange(event.date, from, period.end)) continue;
+      const hit: MoneyHit = {
+        accountId: event.accountId,
+        amount: event.amount,
+        date: event.date,
+        item: eventLabel(event, ruleNames),
+        categoryName: event.categoryName,
+        scheduled: Boolean(event.scheduledRuleId),
+      };
       if (event.kind === "income") {
         income += event.amount;
         if (event.scheduledRuleId) {
@@ -180,10 +214,10 @@ export function buildCashflowRows(input: {
             (incomeByRule.get(event.scheduledRuleId) ?? 0) + event.amount,
           );
           const list = ruledIncome.get(event.scheduledRuleId) ?? [];
-          list.push({ accountId: event.accountId, amount: event.amount });
+          list.push(hit);
           ruledIncome.set(event.scheduledRuleId, list);
         } else {
-          plainIncome.push({ accountId: event.accountId, amount: event.amount });
+          plainIncome.push(hit);
         }
         continue;
       }
@@ -201,12 +235,12 @@ export function buildCashflowRows(input: {
       }
       if (event.scheduledRuleId) {
         scheduledExpense += event.amount;
-        expenseHits.push({ accountId: event.accountId, amount: event.amount });
+        expenseHits.push(hit);
         continue;
       }
       if (pocket || transport) continue;
       extraExpense += event.amount;
-      expenseHits.push({ accountId: event.accountId, amount: event.amount });
+      expenseHits.push(hit);
     }
     const incomes = [...incomeByRule.entries()].map(([ruleId, amount]) => ({ ruleId, amount }));
     if (phase === "past") {
@@ -239,6 +273,36 @@ export function buildCashflowRows(input: {
     cumDaily += daily;
     cumTransport += transport;
     cumAdjustment += plan.adjustment;
+    const deltas =
+      useDepartments || input.audit
+        ? collectPeriodDeltas({
+            plainIncome,
+            ruledIncome,
+            expenseHits,
+            allocationIndex,
+            periodStart: period.start,
+            daily,
+            transport,
+            adjustment: plan.adjustment,
+            dailyAccountId: input.dailyAccountId ?? null,
+            transportAccountId: input.transportAccountId ?? null,
+            ruleNames,
+            applyAllocations: useDepartments,
+          })
+        : [];
+    if (input.audit) {
+      for (const delta of deltas) {
+        input.audit.lines.push({
+          periodStart: period.start,
+          periodEnd: period.end,
+          date: delta.date,
+          accountName: accountNameOf(input.accounts, delta.accountId),
+          kind: delta.kind,
+          item: delta.item,
+          amount: delta.amount,
+        });
+      }
+    }
     const row: CashflowRow = {
       period,
       opening,
@@ -258,14 +322,9 @@ export function buildCashflowRows(input: {
             accounts: input.accounts,
             running,
             unassigned: runningUnassigned,
-            plainIncome,
-            ruledIncome,
-            expenseHits,
-            allocationIndex,
-            periodStart: period.start,
+            deltas,
             daily,
             transport,
-            adjustment: plan.adjustment,
             dailyAccountId: input.dailyAccountId ?? null,
             transportAccountId: input.transportAccountId ?? null,
           })
@@ -312,13 +371,45 @@ function indexAllocations(
   return { active: baseMap.size > 0 || periodMap.size > 0, base: baseMap, periods: periodMap };
 }
 
-function rollDepartments(input: {
-  accounts: CashflowAccountSeed[];
-  running: Map<string, number>;
-  unassigned: number;
-  plainIncome: { accountId: string | null; amount: number }[];
-  ruledIncome: Map<string, { accountId: string | null; amount: number }[]>;
-  expenseHits: { accountId: string | null; amount: number }[];
+type MoneyHit = {
+  accountId: string | null;
+  amount: number;
+  date: string;
+  item: string;
+  categoryName: string | null;
+  scheduled: boolean;
+};
+
+type PeriodDelta = {
+  accountId: string | null;
+  amount: number;
+  date: string;
+  item: string;
+  kind: CashflowAuditKind;
+};
+
+function eventLabel(event: CashflowEvent, ruleNames: Map<string, string>): string {
+  const rule = event.scheduledRuleId ? ruleNames.get(event.scheduledRuleId) : undefined;
+  const memo = event.label?.trim();
+  if (rule && memo && memo !== rule) return `${rule} ${memo}`;
+  return rule || memo || event.categoryName?.trim() || (event.kind === "income" ? "収入" : "支出");
+}
+
+function classifyIncome(name: string): Extract<CashflowAuditKind, "給料" | "広告収入" | "その他収入"> {
+  if (/給与|給料/.test(name)) return "給料";
+  if (name.includes("広告")) return "広告収入";
+  return "その他収入";
+}
+
+function accountNameOf(accounts: CashflowAccountSeed[], accountId: string | null): string {
+  if (!accountId) return "未割り振り";
+  return accounts.find((account) => account.id === accountId)?.name ?? "不明な部門";
+}
+
+function collectPeriodDeltas(input: {
+  plainIncome: MoneyHit[];
+  ruledIncome: Map<string, MoneyHit[]>;
+  expenseHits: MoneyHit[];
   allocationIndex: ReturnType<typeof indexAllocations>;
   periodStart: string;
   daily: number;
@@ -326,39 +417,111 @@ function rollDepartments(input: {
   adjustment: number;
   dailyAccountId: string | null;
   transportAccountId: string | null;
-}): CashflowEndingBreakdown {
-  const before = new Map(input.running);
-  const add = (accountId: string | null, delta: number) => {
-    if (!accountId) {
-      input.unassigned += delta;
-      return;
-    }
-    input.running.set(accountId, (input.running.get(accountId) ?? 0) + delta);
-  };
+  ruleNames: Map<string, string>;
+  applyAllocations: boolean;
+}): PeriodDelta[] {
+  const deltas: PeriodDelta[] = [];
   for (const [ruleId, parts] of input.ruledIncome) {
     const total = parts.reduce((sum, part) => sum + part.amount, 0);
-    const allocated =
-      input.allocationIndex.periods.get(`${input.periodStart}|${ruleId}`) ??
-      input.allocationIndex.base.get(ruleId) ??
-      null;
+    const ruleLabel = input.ruleNames.get(ruleId) ?? parts[0]?.item ?? "収入";
+    const kind = classifyIncome(`${ruleLabel} ${parts[0]?.categoryName ?? ""}`);
+    const allocated = input.applyAllocations
+      ? input.allocationIndex.periods.get(`${input.periodStart}|${ruleId}`) ??
+        input.allocationIndex.base.get(ruleId) ??
+        null
+      : null;
     if (!allocated) {
-      for (const part of parts) add(part.accountId, part.amount);
+      for (const part of parts) {
+        deltas.push({
+          accountId: part.accountId,
+          amount: part.amount,
+          date: part.date,
+          item: part.item || ruleLabel,
+          kind,
+        });
+      }
       continue;
     }
     let assigned = 0;
     for (const [accountId, amount] of allocated) {
-      add(accountId, amount);
+      deltas.push({ accountId, amount, date: "", item: ruleLabel, kind });
       assigned += amount;
     }
-    add(null, total - assigned);
+    if (total !== assigned) {
+      deltas.push({
+        accountId: null,
+        amount: total - assigned,
+        date: "",
+        item: `${ruleLabel}の残り`,
+        kind,
+      });
+    }
   }
-  for (const part of input.plainIncome) add(part.accountId, part.amount);
-  for (const hit of input.expenseHits) add(hit.accountId, -hit.amount);
-  if (input.dailyAccountId) add(input.dailyAccountId, -input.daily);
-  else input.unassigned -= input.daily;
-  if (input.transportAccountId) add(input.transportAccountId, -input.transport);
-  else input.unassigned -= input.transport;
-  input.unassigned -= input.adjustment;
+  for (const part of input.plainIncome) {
+    const label = part.item || part.categoryName || "収入";
+    deltas.push({
+      accountId: part.accountId,
+      amount: part.amount,
+      date: part.date,
+      item: label,
+      kind: classifyIncome(label),
+    });
+  }
+  for (const hit of input.expenseHits) {
+    deltas.push({
+      accountId: hit.accountId,
+      amount: -hit.amount,
+      date: hit.date,
+      item: hit.item,
+      kind: hit.scheduled ? "固定費" : "その他支出",
+    });
+  }
+  if (input.daily !== 0) {
+    deltas.push({
+      accountId: input.dailyAccountId,
+      amount: -input.daily,
+      date: "",
+      item: "デイリー",
+      kind: "デイリー",
+    });
+  }
+  if (input.transport !== 0) {
+    deltas.push({
+      accountId: input.transportAccountId,
+      amount: -input.transport,
+      date: "",
+      item: "交通費",
+      kind: "交通費",
+    });
+  }
+  if (input.adjustment !== 0) {
+    deltas.push({
+      accountId: null,
+      amount: -input.adjustment,
+      date: "",
+      item: "調整",
+      kind: "調整",
+    });
+  }
+  return deltas;
+}
+
+function rollDepartments(input: {
+  accounts: CashflowAccountSeed[];
+  running: Map<string, number>;
+  unassigned: number;
+  deltas: PeriodDelta[];
+  daily: number;
+  transport: number;
+  dailyAccountId: string | null;
+  transportAccountId: string | null;
+}): CashflowEndingBreakdown {
+  const before = new Map(input.running);
+  let unassigned = input.unassigned;
+  for (const delta of input.deltas) {
+    if (!delta.accountId) unassigned += delta.amount;
+    else input.running.set(delta.accountId, (input.running.get(delta.accountId) ?? 0) + delta.amount);
+  }
 
   const lines = input.accounts.map((account) => {
     const now = before.get(account.id) ?? 0;
@@ -385,11 +548,11 @@ function rollDepartments(input: {
   const accountTotal = lines.reduce((sum, line) => sum + line.ending, 0);
   return {
     accounts: lines,
-    unassigned: input.unassigned,
+    unassigned,
     daily: input.dailyAccountId ? 0 : input.daily,
     transport: input.transportAccountId ? 0 : input.transport,
     adjustment: 0,
-    total: accountTotal + input.unassigned,
+    total: accountTotal + unassigned,
     budgetsApplied: true,
   };
 }

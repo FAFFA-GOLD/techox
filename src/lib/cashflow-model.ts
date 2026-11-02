@@ -1,0 +1,161 @@
+import "server-only";
+
+import { buildAccountBalanceViews } from "@/lib/account-display";
+import {
+  CASHFLOW_HISTORY_CUTOFF,
+  defaultCashflowPlan,
+  type CashflowEvent,
+  type CashflowPlanAmounts,
+} from "@/lib/cashflow-forecast";
+import {
+  ensureDailySpendCategories,
+  fetchAccountBalanceSnapshots,
+  fetchAssetAccounts,
+  fetchBalanceMovementsSince,
+  fetchCashflowPlan,
+  fetchDailySpendEntriesInRange,
+  fetchScheduledRules,
+  fetchScheduledRuleSkips,
+  prepareDailySpendSchedules,
+} from "@/lib/data";
+import { todayKeyInTimeZone } from "@/lib/dates";
+import { payPeriodsFrom } from "@/lib/pay-period";
+import { isPocketSpendCategory, isSavingsAccountName, isTransportCategory } from "@/lib/types";
+
+export async function loadCashflowModel() {
+  const today = todayKeyInTimeZone();
+  const anchor = today < CASHFLOW_HISTORY_CUTOFF ? CASHFLOW_HISTORY_CUTOFF : today;
+  const ahead = payPeriodsFrom(anchor, 36);
+  const lastStart = ahead[ahead.length - 1]?.start ?? anchor;
+  const periods = payPeriodsFrom(CASHFLOW_HISTORY_CUTOFF, 120).filter(
+    (period) => period.start <= lastStart,
+  );
+  const [categories, accounts] = await Promise.all([
+    ensureDailySpendCategories(),
+    fetchAssetAccounts(),
+  ]);
+  await prepareDailySpendSchedules(categories, accounts);
+  const snapshots = await fetchAccountBalanceSnapshots();
+  const asOfDates = snapshots
+    .filter((snap) => snap.as_of_date <= today)
+    .map((snap) => snap.as_of_date)
+    .sort();
+  const earliest = asOfDates[0];
+  const [movements, rules, occurrences, skips, plan] = await Promise.all([
+    earliest ? fetchBalanceMovementsSince(earliest, today) : Promise.resolve([]),
+    fetchScheduledRules(),
+    fetchDailySpendEntriesInRange(
+      periods[0].start < CASHFLOW_HISTORY_CUTOFF
+        ? CASHFLOW_HISTORY_CUTOFF
+        : periods[0].start,
+      periods[periods.length - 1].end,
+    ),
+    fetchScheduledRuleSkips(),
+    fetchCashflowPlan(),
+  ]);
+  const balances = buildAccountBalanceViews(accounts, snapshots, movements, today);
+  const known = balances.filter((row) => row.balance != null);
+  const opening = known.reduce((sum, row) => sum + (row.balance ?? 0), 0);
+  const savings = known
+    .filter((row) => isSavingsAccountName(row.name))
+    .reduce((sum, row) => sum + (row.balance ?? 0), 0);
+  const categoryName = new Map(categories.map((category) => [category.id, category.name]));
+  const current = periods.find((period) => period.start <= today && today <= period.end);
+  let spentDaily = 0;
+  let spentTransport = 0;
+  const events: CashflowEvent[] = occurrences.map((entry) => {
+    const name = entry.category_id ? categoryName.get(entry.category_id) ?? null : null;
+    if (
+      current &&
+      entry.date >= CASHFLOW_HISTORY_CUTOFF &&
+      entry.date >= current.start &&
+      entry.date <= today &&
+      entry.kind !== "income"
+    ) {
+      if (name && isPocketSpendCategory(name)) spentDaily += entry.amount;
+      if (name && isTransportCategory(name)) spentTransport += entry.amount;
+    }
+    return {
+      date: entry.date.slice(0, 10),
+      amount: entry.amount,
+      kind: entry.kind === "income" ? "income" : "expense",
+      categoryName: name,
+      scheduledRuleId: entry.scheduled_rule_id ?? null,
+      accountId: entry.asset_account_id ?? null,
+      label: entry.memo,
+    };
+  });
+  const fallback = defaultCashflowPlan(categories, today.slice(0, 7));
+  const base: CashflowPlanAmounts = plan.base
+    ? {
+        daily: plan.base.daily_budget,
+        transport: plan.base.transport_budget,
+        adjustment: plan.base.adjustment,
+        dailyAccountId: plan.base.daily_account_id ?? null,
+        transportAccountId: plan.base.transport_account_id ?? null,
+      }
+    : fallback;
+  const accountSeeds = accounts
+    .filter((account) => !account.archived)
+    .map((account) => ({
+      id: account.id,
+      name: account.name,
+      balance: known.find((row) => row.id === account.id)?.balance ?? 0,
+      savings: isSavingsAccountName(account.name),
+    }));
+  const allocationError = plan.error?.includes("023_cashflow_allocations")
+    ? plan.error
+    : plan.error?.includes("cashflow_income_allocation") || plan.error?.includes("daily_account_id")
+      ? "収入の割り振りには supabase/migrations/023_cashflow_allocations.sql の実行が必要です"
+      : null;
+  const loadError =
+    allocationError ??
+    (plan.error?.includes("cashflow_plan")
+      ? "キャッシュフローの保存には supabase/migrations/021_cashflow_plan.sql の実行が必要です"
+      : plan.error);
+  return {
+    today,
+    savings,
+    savedBase: Boolean(plan.base),
+    accounts: accountSeeds,
+    incomeRules: rules
+      .filter((rule) => rule.flow === "income")
+      .map((rule) => ({ id: rule.id, name: rule.name, amount: rule.amount })),
+    allocations: plan.allocations,
+    periodAllocations: plan.periodAllocations,
+    loadError,
+    forecast: {
+      today,
+      periods,
+      opening,
+      events,
+      rules,
+      skips,
+      base,
+      overrides: plan.periods.map((row) => ({
+        periodStart: String(row.period_start).slice(0, 10),
+        amounts: {
+          daily: row.daily_budget,
+          transport: row.transport_budget,
+          adjustment: row.adjustment,
+        },
+      })),
+      spentDaily,
+      spentTransport,
+      accounts: accountSeeds,
+      allocations: plan.allocations.map((row) => ({
+        ruleId: row.scheduled_rule_id,
+        accountId: row.asset_account_id,
+        amount: row.amount,
+      })),
+      periodAllocations: plan.periodAllocations.map((row) => ({
+        periodStart: String(row.period_start).slice(0, 10),
+        ruleId: row.scheduled_rule_id,
+        accountId: row.asset_account_id,
+        amount: row.amount,
+      })),
+      dailyAccountId: base.dailyAccountId ?? null,
+      transportAccountId: base.transportAccountId ?? null,
+    },
+  };
+}

@@ -59,11 +59,16 @@ export function CashflowClient({
     <div className="grid min-w-0 gap-4">
       <div>
         <h1 className="text-xl font-bold">キャッシュフロー</h1>
-        {now ? (
-          <a href="#cashflow-now" className="mt-2 inline-block text-sm text-accent hover:underline">
-            いまの期間へ
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          {now ? (
+            <a href="#cashflow-now" className="text-accent hover:underline">
+              いまの期間へ
+            </a>
+          ) : null}
+          <a href="/api/export/cashflow" className="text-accent hover:underline">
+            確認用エクセル
           </a>
-        ) : null}
+        </div>
         <p className="mt-1 text-sm text-muted">
           給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。起点は2026年10月30日のまま残し、月が進んでもこの表の先頭から消えません。2026年10月29日までは旧履歴です。終わった期間は実績、いまの期間は色を付けています。期末の括弧内は貯金を含んだ額です。
         </p>
