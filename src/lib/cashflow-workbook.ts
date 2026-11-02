@@ -1,3 +1,4 @@
+import { deflateRawSync as zlibDeflateRawSync } from "zlib";
 import type { CashflowAuditLine, CashflowRow } from "@/lib/cashflow-forecast";
 
 const KINDS = [
@@ -19,32 +20,22 @@ export type CashflowWorkbookAccount = {
   savings: boolean;
 };
 
-export function buildCashflowWorkbookXml(input: {
+export function buildCashflowWorkbook(input: {
   today: string;
   rows: CashflowRow[];
   lines: CashflowAuditLine[];
   accounts: CashflowWorkbookAccount[];
-}): string {
+}): Buffer {
   const projected = input.rows.filter((row) => row.phase !== "past");
   const departments = departmentList(input.accounts, input.lines);
   const built = buildDepartmentRows(projected, input.lines, departments, input.accounts);
-  const sheets = [
-    worksheet("期間", periodRows(projected, built.rows)),
-    worksheet("部門", departmentSheetRows(built.rows, departments.length)),
-    worksheet("明細", detailRows(input.lines)),
-    worksheet("残高", balanceRows(input.accounts)),
-    worksheet("読み方", guideRows(input.today)),
-  ];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Styles>
-<Style ss:ID="h"><Font ss:Bold="1"/></Style>
-<Style ss:ID="n"><NumberFormat ss:Format="#,##0"/></Style>
-</Styles>
-${sheets.join("\n")}
-</Workbook>
-`;
+  return encodeXlsx([
+    ["期間", periodRows(projected, built.rows)],
+    ["部門", departmentSheetRows(built.rows, departments.length)],
+    ["明細", detailRows(input.lines)],
+    ["残高", balanceRows(input.accounts)],
+    ["読み方", guideRows(input.today)],
+  ]);
 }
 
 /** 部門の期末を足すと、画面の期末と一致するか */
@@ -176,11 +167,11 @@ function screenEnding(row: CashflowRow, name: string): number | null {
   return matches.reduce((sum, line) => sum + line.ending, 0);
 }
 
-function guideRows(today: string): string[][] {
+function guideRows(today: string): SheetCell[][] {
   const lines = [
     "キャッシュフロー確認用",
     `出力日 ${today}。画面の表と同じ計算です。`,
-    "支出はマイナスです。給料・固定費などの金額はそのまま入っています。期末と差は、同じ行の足し算です。",
+    "支出はマイナスです。期末の数式は =D2+E2+F2+G2+H2+I2+J2+K2+L2 です。セル番地に引用符は付きません。",
     "いまの期間の期首は、今日の部門残高です。今日までの入出金は残高に入っているので、給料・広告・固定費は明日以降だけ足します。",
     "先の期間は、前の期末を期首にして、その期間の収入と固定費を全部入れます。",
     "デイリーと交通費は、いまの期間は設定額から記録済みを引いた残りです。先の期間は設定額を全部引きます。",
@@ -192,7 +183,7 @@ function guideRows(today: string): string[][] {
   return lines.map((line) => [textCell(line)]);
 }
 
-function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[]): string[][] {
+function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[]): SheetCell[][] {
   const header = [
     "期間",
     "開始",
@@ -232,7 +223,7 @@ function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[])
   return [header, ...body];
 }
 
-function departmentSheetRows(rows: DepartmentSheetRow[], departmentCount: number): string[][] {
+function departmentSheetRows(rows: DepartmentSheetRow[], departmentCount: number): SheetCell[][] {
   const header = [
     "期間開始",
     "期間終了",
@@ -275,7 +266,7 @@ function departmentSheetRows(rows: DepartmentSheetRow[], departmentCount: number
   return [header, ...body];
 }
 
-function detailRows(lines: CashflowAuditLine[]): string[][] {
+function detailRows(lines: CashflowAuditLine[]): SheetCell[][] {
   const header = ["期間開始", "期間終了", "日付", "部門", "種類", "項目", "金額"].map((label) =>
     textCell(label, "h"),
   );
@@ -299,10 +290,10 @@ function detailRows(lines: CashflowAuditLine[]): string[][] {
   return [header, ...body];
 }
 
-function balanceRows(accounts: CashflowWorkbookAccount[]): string[][] {
+function balanceRows(accounts: CashflowWorkbookAccount[]): SheetCell[][] {
   const header = ["部門", "今日の残高", "貯金"].map((label) => textCell(label, "h"));
   const seen = new Set<string>();
-  const body: string[][] = [];
+  const body: SheetCell[][] = [];
   let cachedTotal = 0;
   for (const account of accounts) {
     if (seen.has(account.name)) continue;
@@ -322,46 +313,28 @@ function balanceRows(accounts: CashflowWorkbookAccount[]): string[][] {
   body.push([
     textCell("合計", "h"),
     lastDataRow >= 2
-      ? formulaNumber(`=${Array.from({ length: lastDataRow - 1 }, (_, index) => `B${index + 2}`).join("+")}`, cachedTotal)
+      ? formulaNumber(`=SUM(B2:B${lastDataRow})`, cachedTotal)
       : numberCell(0),
     textCell(""),
   ]);
   return [header, ...body];
 }
 
-function worksheet(name: string, rows: string[][]): string {
-  const xmlRows = rows
-    .map((row) => `<Row>${row.join("")}</Row>`)
-    .join("");
-  return `<Worksheet ss:Name="${xmlText(name)}"><Table>${xmlRows}</Table></Worksheet>`;
+type SheetCell =
+  | { t: "s"; v: string; bold?: boolean }
+  | { t: "n"; v: number }
+  | { t: "f"; f: string; v: number };
+
+function textCell(value: string, style?: "h"): SheetCell {
+  return { t: "s", v: value, bold: style === "h" };
 }
 
-function textCell(value: string, style?: "h"): string {
-  const styleAttr = style ? ` ss:StyleID="${style}"` : "";
-  return `<Cell${styleAttr}><Data ss:Type="String">${xmlText(value)}</Data></Cell>`;
+function numberCell(value: number): SheetCell {
+  return { t: "n", v: value };
 }
 
-function numberCell(value: number): string {
-  return `<Cell ss:StyleID="n"><Data ss:Type="Number">${formatNumber(value)}</Data></Cell>`;
-}
-
-function formulaNumber(formula: string, value: number): string {
-  return `<Cell ss:StyleID="n" ss:Formula="${xmlText(toR1C1(formula))}"><Data ss:Type="Number">${formatNumber(value)}</Data></Cell>`;
-}
-
-/** SpreadsheetML の数式は R1C1。A1 のまま出すと 'D3' という名前になる。 */
-function toR1C1(formula: string): string {
-  return formula.replace(/[A-Z]+\d+/g, (cell) => {
-    const match = /^([A-Z]+)(\d+)$/.exec(cell);
-    if (!match) return cell;
-    return `R${match[2]}C${columnIndex(match[1])}`;
-  });
-}
-
-function columnIndex(letters: string): number {
-  let index = 0;
-  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
-  return index;
+function formulaNumber(formula: string, value: number): SheetCell {
+  return { t: "f", f: formula.replace(/^=/, ""), v: value };
 }
 
 function formatNumber(value: number): string {
@@ -376,4 +349,173 @@ function xmlText(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function encodeXlsx(sheets: [string, SheetCell[][]][]): Buffer {
+  const files: { name: string; data: Buffer }[] = [
+    { name: "[Content_Types].xml", data: Buffer.from(contentTypes(sheets.length), "utf8") },
+    { name: "_rels/.rels", data: Buffer.from(rootRels(), "utf8") },
+    { name: "xl/workbook.xml", data: Buffer.from(workbookXml(sheets.map(([name]) => name)), "utf8") },
+    { name: "xl/_rels/workbook.xml.rels", data: Buffer.from(workbookRels(sheets.length), "utf8") },
+    { name: "xl/styles.xml", data: Buffer.from(stylesXml(), "utf8") },
+  ];
+  sheets.forEach(([, rows], index) => {
+    files.push({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      data: Buffer.from(sheetXml(rows), "utf8"),
+    });
+  });
+  return zipFiles(files);
+}
+
+function contentTypes(count: number): string {
+  const sheets = Array.from({ length: count }, (_, index) =>
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+  ).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets}
+</Types>`;
+}
+
+function rootRels(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+}
+
+function workbookXml(names: string[]): string {
+  const sheets = names
+    .map((name, index) => `<sheet name="${xmlText(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${sheets}</sheets>
+</workbook>`;
+}
+
+function workbookRels(count: number): string {
+  const sheets = Array.from({ length: count }, (_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
+  ).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${sheets}
+<Relationship Id="rId${count + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+}
+
+function stylesXml(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts>
+<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
+<fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="3">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1"/>
+</cellXfs>
+</styleSheet>`;
+}
+
+function sheetXml(rows: SheetCell[][]): string {
+  const body = rows
+    .map((row, rowIndex) => {
+      const excelRow = rowIndex + 1;
+      const cells = row
+        .map((cell, columnIndex) => cellXml(cell, `${columnName(columnIndex + 1)}${excelRow}`))
+        .join("");
+      return `<row r="${excelRow}">${cells}</row>`;
+    })
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>${body}</sheetData>
+</worksheet>`;
+}
+
+function cellXml(cell: SheetCell, ref: string): string {
+  if (cell.t === "s") {
+    const style = cell.bold ? ` s="2"` : "";
+    return `<c r="${ref}" t="inlineStr"${style}><is><t>${xmlText(cell.v)}</t></is></c>`;
+  }
+  if (cell.t === "f") {
+    return `<c r="${ref}" s="1"><f>${xmlText(cell.f)}</f><v>${formatNumber(cell.v)}</v></c>`;
+  }
+  return `<c r="${ref}" s="1"><v>${formatNumber(cell.v)}</v></c>`;
+}
+
+function columnName(index: number): string {
+  let name = "";
+  let n = index;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    name = String.fromCharCode(65 + rem) + name;
+    n = Math.floor((n - 1) / 26);
+  }
+  return name;
+}
+
+function zipFiles(files: { name: string; data: Buffer }[]): Buffer {
+  const locals: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = Buffer.from(file.name, "utf8");
+    const compressed = deflateRaw(file.data);
+    const crc = crc32(file.data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(file.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const localFile = Buffer.concat([local, name, compressed]);
+    locals.push(localFile);
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0);
+    cen.writeUInt16LE(20, 4);
+    cen.writeUInt16LE(20, 6);
+    cen.writeUInt16LE(8, 10);
+    cen.writeUInt32LE(crc, 16);
+    cen.writeUInt32LE(compressed.length, 20);
+    cen.writeUInt32LE(file.data.length, 24);
+    cen.writeUInt16LE(name.length, 28);
+    cen.writeUInt32LE(offset, 42);
+    central.push(Buffer.concat([cen, name]));
+    offset += localFile.length;
+  }
+  const centralDir = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralDir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralDir, end]);
+}
+
+function deflateRaw(data: Buffer): Buffer {
+  return zlibDeflateRawSync(data);
+}
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }

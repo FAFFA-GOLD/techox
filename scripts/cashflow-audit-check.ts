@@ -1,6 +1,10 @@
 import { payPeriodsFrom } from "../src/lib/pay-period";
 import { buildCashflowRows, type CashflowAuditLine } from "../src/lib/cashflow-forecast";
-import { buildCashflowWorkbookXml, cashflowWorkbookGaps } from "../src/lib/cashflow-workbook";
+import { execFileSync } from "child_process";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { buildCashflowWorkbook, cashflowWorkbookGaps } from "../src/lib/cashflow-workbook";
 import type { ScheduledRule } from "../src/lib/types";
 
 const periods = payPeriodsFrom("2026-10-30", 3);
@@ -99,12 +103,21 @@ function check(label: string, useAllocation: boolean) {
   if (!row || row.ending !== opening + 180000 + 12000 - 89000 - 35000 - 3000) {
     gaps.push(`${label} 期末 ${row?.ending}`);
   }
-  const xml = buildCashflowWorkbookXml({ today, rows, lines: audit.lines, accounts });
-  const sheets = xml.match(/<Worksheet /g) ?? [];
-  if (sheets.length !== 5) gaps.push(`${label} シート ${sheets.length}`);
-  if (!xml.includes("家へ") || !xml.includes("JCB")) gaps.push(`${label} 明細の固定費`);
-  if (!xml.includes("=R2C4+R2C5+R2C6+R2C7+R2C8+R2C9+R2C10+R2C11+R2C12")) gaps.push(`${label} 期末の足し算`);
-  if (xml.includes("SUMIF") || xml.includes("サム") || xml.includes('Formula="=D')) gaps.push(`${label} 関数名`);
+  const xlsx = buildCashflowWorkbook({ today, rows, lines: audit.lines, accounts });
+  const dir = mkdtempSync(join(tmpdir(), "cashflow-"));
+  const file = join(dir, "cashflow-check.xlsx");
+  writeFileSync(file, xlsx);
+  const names = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" });
+  if (!names.includes("xl/worksheets/sheet1.xml") || !names.includes("xl/worksheets/sheet5.xml")) {
+    gaps.push(`${label} シート`);
+  }
+  const periodSheet = execFileSync("unzip", ["-p", file, "xl/worksheets/sheet1.xml"], { encoding: "utf8" });
+  const detailSheet = execFileSync("unzip", ["-p", file, "xl/worksheets/sheet3.xml"], { encoding: "utf8" });
+  const balanceSheet = execFileSync("unzip", ["-p", file, "xl/worksheets/sheet4.xml"], { encoding: "utf8" });
+  if (!detailSheet.includes("家へ") || !detailSheet.includes("JCB")) gaps.push(`${label} 明細の固定費`);
+  if (!periodSheet.includes("<f>D2+E2+F2+G2+H2+I2+J2+K2+L2</f>")) gaps.push(`${label} 期末の足し算`);
+  if (periodSheet.includes("'D") || periodSheet.includes("R2C")) gaps.push(`${label} 引用符つき参照`);
+  if (!balanceSheet.includes("<f>SUM(B2:B")) gaps.push(`${label} 残高合計`);
   if (gaps.length > 0) {
     console.error(label, gaps);
     process.exitCode = 1;
