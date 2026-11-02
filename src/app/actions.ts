@@ -411,16 +411,24 @@ export async function upsertBalanceSnapshot(formData: FormData) {
     .eq("id", asset_account_id)
     .maybeSingle();
 
-  const { error } = await supabase.from("account_balance_snapshots").upsert(
-    {
-      user_id: user.id,
-      asset_account_id,
-      as_of_date,
-      balance: Math.round(balance),
-      note,
-    },
+  const savedAt = new Date().toISOString();
+  const snapshotRow = {
+    user_id: user.id,
+    asset_account_id,
+    as_of_date,
+    balance: Math.round(balance),
+    note,
+  };
+  let { error } = await supabase.from("account_balance_snapshots").upsert(
+    { ...snapshotRow, updated_at: savedAt },
     { onConflict: "user_id,asset_account_id,as_of_date" },
   );
+  if (error?.message.includes("updated_at")) {
+    ({ error } = await supabase.from("account_balance_snapshots").upsert(
+      { ...snapshotRow, created_at: savedAt },
+      { onConflict: "user_id,asset_account_id,as_of_date" },
+    ));
+  }
   if (error) {
     if (
       error.message.includes("account_balance_snapshots") ||

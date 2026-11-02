@@ -119,6 +119,7 @@ export type AccountBalanceSnapshot = {
   balance: number;
   note: string | null;
   created_at: string;
+  updated_at?: string | null;
 };
 
 /** 口座間振替（手数料は出金側負担・既定 0） */
