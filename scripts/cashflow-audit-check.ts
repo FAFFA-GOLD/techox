@@ -103,8 +103,8 @@ function check(label: string, useAllocation: boolean) {
   const sheets = xml.match(/<Worksheet /g) ?? [];
   if (sheets.length !== 5) gaps.push(`${label} シート ${sheets.length}`);
   if (!xml.includes("家へ") || !xml.includes("JCB")) gaps.push(`${label} 明細の固定費`);
-  if (!xml.includes("=D2+E2+F2+G2+H2+I2+J2+K2+L2")) gaps.push(`${label} 期末の足し算`);
-  if (xml.includes("SUMIF") || xml.includes("サム")) gaps.push(`${label} 関数名`);
+  if (!xml.includes("=R2C4+R2C5+R2C6+R2C7+R2C8+R2C9+R2C10+R2C11+R2C12")) gaps.push(`${label} 期末の足し算`);
+  if (xml.includes("SUMIF") || xml.includes("サム") || xml.includes('Formula="=D')) gaps.push(`${label} 関数名`);
   if (gaps.length > 0) {
     console.error(label, gaps);
     process.exitCode = 1;
