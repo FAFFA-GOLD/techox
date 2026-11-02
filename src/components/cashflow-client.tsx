@@ -50,6 +50,7 @@ export function CashflowClient({
       <span className="ml-1 font-normal text-muted">（{formatYen(withSavings)}）</span>
     </>
   );
+  const orderedIncomeRules = [...incomeRules].sort(compareIncomeRules);
   const yearGroups = groupRowsByYear(rows);
 
   return (
@@ -84,7 +85,7 @@ export function CashflowClient({
       </section>
       <BasePlanForm base={base} saved={savedBase} accounts={accounts} />
       <IncomeAllocationForm
-        incomeRules={incomeRules}
+        incomeRules={orderedIncomeRules}
         accounts={accounts}
         allocations={allocations}
       />
@@ -223,7 +224,7 @@ export function CashflowClient({
                         <PeriodAllocationForm
                           periodStart={row.period.start}
                           incomes={row.incomes}
-                          incomeRules={incomeRules}
+                          incomeRules={orderedIncomeRules}
                           accounts={accounts}
                           allocations={allocations}
                           periodAllocations={periodAllocations}
@@ -250,6 +251,11 @@ export function CashflowClient({
       </div>
     </div>
   );
+}
+
+function compareIncomeRules(a: { name: string }, b: { name: string }): number {
+  const rank = (name: string) => (name.includes("給料") ? 0 : name.includes("広告") ? 1 : 2);
+  return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "ja");
 }
 
 function monthDayLabel(start: string, end: string): string {
@@ -540,7 +546,10 @@ function PeriodAllocationForm({
     >
       <input type="hidden" name="period_start" value={periodStart} />
       <p className="text-xs text-muted">この期間に入る収入を、部門へ割り振ります。空のまま保存すると基本に戻ります。</p>
-      {incomes.map((income) => {
+      {[...incomes].sort((a, b) => compareIncomeRules(
+        { name: names.get(a.ruleId) ?? "" },
+        { name: names.get(b.ruleId) ?? "" },
+      )).map((income) => {
         const periodRows = periodAllocations.filter(
           (row) =>
             String(row.period_start).slice(0, 10) === periodStart &&
