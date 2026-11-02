@@ -258,12 +258,16 @@ export function CashflowClient({
   );
 }
 
+function isSalaryIncome(name: string): boolean {
+  return name.includes("給料") || name.includes("給与");
+}
+
 function isAllocatableIncome(name: string): boolean {
-  return name.includes("給料") || name.includes("広告");
+  return isSalaryIncome(name) || name.includes("広告");
 }
 
 function compareIncomeRules(a: { name: string }, b: { name: string }): number {
-  const rank = (name: string) => (name.includes("給料") ? 0 : name.includes("広告") ? 1 : 2);
+  const rank = (name: string) => (isSalaryIncome(name) ? 0 : name.includes("広告") ? 1 : 2);
   return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "ja");
 }
 
