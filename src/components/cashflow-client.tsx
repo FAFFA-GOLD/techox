@@ -50,7 +50,9 @@ export function CashflowClient({
       <span className="ml-1 font-normal text-muted">（{formatYen(withSavings)}）</span>
     </>
   );
-  const orderedIncomeRules = [...incomeRules].sort(compareIncomeRules);
+  const orderedIncomeRules = incomeRules
+    .filter((rule) => isAllocatableIncome(rule.name))
+    .sort(compareIncomeRules);
   const yearGroups = groupRowsByYear(rows);
 
   return (
@@ -219,7 +221,10 @@ export function CashflowClient({
                   }`}
                 >
                   <div className="flex items-center gap-1">
-                    {row.phase !== "past" && row.incomes.length > 0 ? (
+                    {row.phase !== "past" &&
+                    row.incomes.some((income) =>
+                      orderedIncomeRules.some((rule) => rule.id === income.ruleId),
+                    ) ? (
                       <EditPopover wide buttonLabel="割り振り" title={`${monthDayLabel(row.period.start, row.period.end)}の割り振り`}>
                         <PeriodAllocationForm
                           periodStart={row.period.start}
@@ -251,6 +256,10 @@ export function CashflowClient({
       </div>
     </div>
   );
+}
+
+function isAllocatableIncome(name: string): boolean {
+  return name.includes("給料") || name.includes("広告");
 }
 
 function compareIncomeRules(a: { name: string }, b: { name: string }): number {
@@ -546,7 +555,7 @@ function PeriodAllocationForm({
     >
       <input type="hidden" name="period_start" value={periodStart} />
       <p className="text-xs text-muted">この期間に入る収入を、部門へ割り振ります。空のまま保存すると基本に戻ります。</p>
-      {[...incomes].sort((a, b) => compareIncomeRules(
+      {[...incomes].filter((income) => isAllocatableIncome(names.get(income.ruleId) ?? "")).sort((a, b) => compareIncomeRules(
         { name: names.get(a.ruleId) ?? "" },
         { name: names.get(b.ruleId) ?? "" },
       )).map((income) => {
