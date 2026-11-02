@@ -89,8 +89,18 @@ export default async function ForecastPage() {
         daily: plan.base.daily_budget,
         transport: plan.base.transport_budget,
         adjustment: plan.base.adjustment,
+        dailyAccountId: plan.base.daily_account_id ?? null,
+        transportAccountId: plan.base.transport_account_id ?? null,
       }
     : fallback;
+  const accountSeeds = accounts
+    .filter((account) => !account.archived)
+    .map((account) => ({
+      id: account.id,
+      name: account.name,
+      balance: known.find((row) => row.id === account.id)?.balance ?? 0,
+      savings: isSavingsAccountName(account.name),
+    }));
   const rows = buildCashflowRows({
     today,
     periods,
@@ -109,23 +119,44 @@ export default async function ForecastPage() {
     })),
     spentDaily,
     spentTransport,
-    accounts: known.map((row) => ({
-      id: row.id,
-      name: row.name,
-      balance: row.balance ?? 0,
-      savings: isSavingsAccountName(row.name),
+    accounts: accountSeeds,
+    allocations: plan.allocations.map((row) => ({
+      ruleId: row.scheduled_rule_id,
+      accountId: row.asset_account_id,
+      amount: row.amount,
     })),
+    periodAllocations: plan.periodAllocations.map((row) => ({
+      periodStart: String(row.period_start).slice(0, 10),
+      ruleId: row.scheduled_rule_id,
+      accountId: row.asset_account_id,
+      amount: row.amount,
+    })),
+    dailyAccountId: base.dailyAccountId ?? null,
+    transportAccountId: base.transportAccountId ?? null,
   });
+  const incomeRules = rules
+    .filter((rule) => rule.flow === "income")
+    .map((rule) => ({ id: rule.id, name: rule.name, amount: rule.amount }));
+  const allocationError = plan.error?.includes("023_cashflow_allocations")
+    ? plan.error
+    : plan.error?.includes("cashflow_income_allocation") || plan.error?.includes("daily_account_id")
+      ? "収入の割り振りには supabase/migrations/023_cashflow_allocations.sql の実行が必要です"
+      : null;
   return (
     <CashflowClient
       rows={rows}
       savings={savings}
       base={base}
       savedBase={Boolean(plan.base)}
+      accounts={accountSeeds.map((account) => ({ id: account.id, name: account.name }))}
+      incomeRules={incomeRules}
+      allocations={plan.allocations}
+      periodAllocations={plan.periodAllocations}
       loadError={
-        plan.error
+        allocationError ??
+        (plan.error?.includes("cashflow_plan")
           ? "キャッシュフローの保存には supabase/migrations/021_cashflow_plan.sql の実行が必要です"
-          : null
+          : plan.error)
       }
     />
   );

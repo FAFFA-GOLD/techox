@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { saveCashflowPeriod, saveCashflowPlan } from "@/app/actions";
+import { useRouter } from "next/navigation";
+import { saveCashflowPeriod, saveCashflowPlan, saveIncomeAllocations } from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
 import type {
   CashflowEndingBreakdown,
@@ -15,12 +16,25 @@ export function CashflowClient({
   savings,
   base,
   savedBase,
+  accounts,
+  incomeRules,
+  allocations,
+  periodAllocations,
   loadError,
 }: {
   rows: CashflowRow[];
   savings: number;
   base: CashflowPlanAmounts;
   savedBase: boolean;
+  accounts: { id: string; name: string }[];
+  incomeRules: { id: string; name: string; amount: number }[];
+  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
+  periodAllocations: {
+    period_start: string;
+    scheduled_rule_id: string;
+    asset_account_id: string;
+    amount: number;
+  }[];
   loadError: string | null;
 }) {
   const projected = rows.filter((row) => row.phase !== "past");
@@ -68,7 +82,12 @@ export function CashflowClient({
           </p>
         </div>
       </section>
-      <BasePlanForm base={base} saved={savedBase} />
+      <BasePlanForm base={base} saved={savedBase} accounts={accounts} />
+      <IncomeAllocationForm
+        incomeRules={incomeRules}
+        accounts={accounts}
+        allocations={allocations}
+      />
       {yearGroups.length > 0 ? (
         <section className="grid gap-2 sm:grid-cols-3">
           {yearGroups.map((group) => {
@@ -181,7 +200,11 @@ export function CashflowClient({
                 <td className="px-2 py-2 whitespace-nowrap">
                   {row.phase === "past" || !row.breakdown ? null : (
                     <EditPopover title={`${row.period.label} の期末`} buttonLabel="内訳">
-                      <EndingBreakdown breakdown={row.breakdown} savings={savings} />
+                      <EndingBreakdown
+                        breakdown={row.breakdown}
+                        savings={savings}
+                        openingLabel={row.phase === "now" ? "今日" : "期首"}
+                      />
                     </EditPopover>
                   )}
                 </td>
@@ -194,16 +217,30 @@ export function CashflowClient({
                         : "bg-white shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"
                   }`}
                 >
-                  <EditPopover buttonLabel="編集" title="この期の予算">
-                    <PeriodForm
-                      periodStart={row.period.start}
-                      label={row.period.label}
-                      daily={row.planDaily}
-                      transport={row.planTransport}
-                      adjustment={row.planAdjustment}
-                      custom={row.custom}
-                    />
-                  </EditPopover>
+                  <div className="flex items-center gap-1">
+                    {row.phase !== "past" && row.incomes.length > 0 ? (
+                      <EditPopover wide buttonLabel="割り振り" title={`${monthDayLabel(row.period.start, row.period.end)}の割り振り`}>
+                        <PeriodAllocationForm
+                          periodStart={row.period.start}
+                          incomes={row.incomes}
+                          incomeRules={incomeRules}
+                          accounts={accounts}
+                          allocations={allocations}
+                          periodAllocations={periodAllocations}
+                        />
+                      </EditPopover>
+                    ) : null}
+                    <EditPopover buttonLabel="編集" title="この期の予算">
+                      <PeriodForm
+                        periodStart={row.period.start}
+                        label={row.period.label}
+                        daily={row.planDaily}
+                        transport={row.planTransport}
+                        adjustment={row.planAdjustment}
+                        custom={row.custom}
+                      />
+                    </EditPopover>
+                  </div>
                 </td>
               </tr>
               )),
@@ -237,12 +274,15 @@ function groupRowsByYear(rows: CashflowRow[]): { year: string; rows: CashflowRow
 function BasePlanForm({
   base,
   saved,
+  accounts,
 }: {
   base: CashflowPlanAmounts;
   saved: boolean;
+  accounts: { id: string; name: string }[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   return (
     <form
       className="grid gap-3 rounded-xl border border-line/80 bg-surface p-4"
@@ -250,6 +290,7 @@ function BasePlanForm({
         startTransition(async () => {
           const res = await saveCashflowPlan(fd);
           setError(res && "error" in res ? res.error ?? null : null);
+          if (!res || !("error" in res) || !res.error) router.refresh();
         });
       }}
     >
@@ -264,6 +305,18 @@ function BasePlanForm({
         <MoneyField name="daily_budget" label="デイリー予算額" defaultValue={base.daily} />
         <MoneyField name="transport_budget" label="交通費予算額" defaultValue={base.transport} />
         <MoneyField name="adjustment" label="調整金額" defaultValue={base.adjustment} />
+        <AccountSelect
+          name="daily_account_id"
+          label="デイリーの支出元"
+          accounts={accounts}
+          defaultValue={base.dailyAccountId ?? ""}
+        />
+        <AccountSelect
+          name="transport_account_id"
+          label="交通費の支出元"
+          accounts={accounts}
+          defaultValue={base.transportAccountId ?? ""}
+        />
       </div>
       {error ? <p className="text-sm text-expense">{error}</p> : null}
       <button
@@ -335,15 +388,19 @@ function PeriodForm({
 function EndingBreakdown({
   breakdown,
   savings,
+  openingLabel,
 }: {
   breakdown: CashflowEndingBreakdown;
   savings: number;
+  openingLabel: string;
 }) {
   const departments = breakdown.accounts.reduce((sum, line) => sum + line.ending, 0);
   return (
     <div className="grid gap-3 text-sm">
       <p className="text-xs text-muted">
-        今日の各部門に、この期末までに入る予定の入出金を足しています。デイリー・交通費・調整は部門が決まっていないので、あとからまとめて引いています。
+        {breakdown.budgetsApplied
+          ? "割り振った収入と、取引・生活費・交通費を各部門に入れた期末です。未割り振りは、部門が決まっていない分です。"
+          : "今日の各部門に、この期末までに入る予定の入出金を足しています。デイリー・交通費・調整は部門が決まっていないので、あとからまとめて引いています。"}
       </p>
       <ul className="grid text-xs">
         {breakdown.accounts.map((line) => (
@@ -354,7 +411,7 @@ function EndingBreakdown({
                 {line.savings ? <span className="ml-1 text-muted">貯金</span> : null}
               </p>
               <p className="text-[11px] text-muted">
-                今日 {formatYen(line.now)}
+                {openingLabel} {formatYen(line.now)}
                 <span className="mx-1">/</span>
                 この先 {line.change === 0 ? "—" : formatYen(line.change)}
               </p>
@@ -366,19 +423,230 @@ function EndingBreakdown({
       <dl className="grid gap-1 text-xs">
         <BreakdownLine label="部門の合計" amount={formatYen(departments)} />
         {breakdown.unassigned !== 0 ? (
-          <BreakdownLine label="部門なし" amount={formatYen(breakdown.unassigned)} />
+          <BreakdownLine
+            label={breakdown.budgetsApplied ? "未割り振り" : "部門なし"}
+            amount={formatYen(breakdown.unassigned)}
+          />
         ) : null}
-        <BreakdownLine label="デイリー" amount={`-${formatYen(breakdown.daily)}`} expense />
-        <BreakdownLine label="交通費" amount={`-${formatYen(breakdown.transport)}`} expense />
-        <BreakdownLine
-          label="調整"
-          amount={`${breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}${formatYen(Math.abs(breakdown.adjustment))}`}
-          expense={breakdown.adjustment > 0}
-        />
+        {breakdown.budgetsApplied ? null : (
+          <>
+            <BreakdownLine label="デイリー" amount={`-${formatYen(breakdown.daily)}`} expense />
+            <BreakdownLine label="交通費" amount={`-${formatYen(breakdown.transport)}`} expense />
+            <BreakdownLine
+              label="調整"
+              amount={`${breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}${formatYen(Math.abs(breakdown.adjustment))}`}
+              expense={breakdown.adjustment > 0}
+            />
+          </>
+        )}
         <BreakdownLine label="貯金込み" amount={formatYen(breakdown.total)} strong rule />
         <BreakdownLine label="貯金を除く" amount={formatYen(breakdown.total - savings)} strong />
       </dl>
     </div>
+  );
+}
+
+function IncomeAllocationForm({
+  incomeRules,
+  accounts,
+  allocations,
+}: {
+  incomeRules: { id: string; name: string; amount: number }[];
+  accounts: { id: string; name: string }[];
+  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  if (incomeRules.length === 0) return null;
+  return (
+    <form
+      className="grid gap-3 rounded-xl border border-line/80 bg-surface p-4"
+      action={(fd) => {
+        startTransition(async () => {
+          const res = await saveIncomeAllocations(fd);
+          setError(res && "error" in res ? res.error ?? null : null);
+          if (!res || !("error" in res) || !res.error) router.refresh();
+        });
+      }}
+    >
+      <div>
+        <h2 className="text-sm font-bold">収入の割り振り</h2>
+        <p className="mt-1 text-xs text-muted">
+          毎月の基本です。収入の合計は変わりません。残った額は部門に入らず、未割り振りになります。各期の「割り振り」で、その期間だけ変えられます。
+        </p>
+      </div>
+      {incomeRules.map((rule) => (
+        <AllocationFields
+          key={rule.id}
+          ruleId={rule.id}
+          title={rule.name}
+          cap={rule.amount}
+          accounts={accounts}
+          initial={Object.fromEntries(
+            allocations
+              .filter((row) => row.scheduled_rule_id === rule.id)
+              .map((row) => [row.asset_account_id, row.amount]),
+          )}
+        />
+      ))}
+      {error ? <p className="text-sm text-expense">{error}</p> : null}
+      <button
+        type="submit"
+        disabled={pending}
+        className="w-fit rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
+      >
+        {pending ? "保存しています…" : "割り振りを保存"}
+      </button>
+    </form>
+  );
+}
+
+function PeriodAllocationForm({
+  periodStart,
+  incomes,
+  incomeRules,
+  accounts,
+  allocations,
+  periodAllocations,
+}: {
+  periodStart: string;
+  incomes: { ruleId: string; amount: number }[];
+  incomeRules: { id: string; name: string; amount: number }[];
+  accounts: { id: string; name: string }[];
+  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
+  periodAllocations: {
+    period_start: string;
+    scheduled_rule_id: string;
+    asset_account_id: string;
+    amount: number;
+  }[];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const names = new Map(incomeRules.map((rule) => [rule.id, rule.name]));
+  const custom = periodAllocations.some((row) => String(row.period_start).slice(0, 10) === periodStart);
+  return (
+    <form
+      className="grid gap-3"
+      action={(fd) => {
+        startTransition(async () => {
+          const res = await saveIncomeAllocations(fd);
+          setError(res && "error" in res ? res.error ?? null : null);
+          if (!res || !("error" in res) || !res.error) router.refresh();
+        });
+      }}
+    >
+      <input type="hidden" name="period_start" value={periodStart} />
+      <p className="text-xs text-muted">この期間に入る収入を、部門へ割り振ります。空のまま保存すると基本に戻ります。</p>
+      {incomes.map((income) => {
+        const periodRows = periodAllocations.filter(
+          (row) =>
+            String(row.period_start).slice(0, 10) === periodStart &&
+            row.scheduled_rule_id === income.ruleId,
+        );
+        const source = periodRows.length > 0 ? periodRows : allocations.filter((row) => row.scheduled_rule_id === income.ruleId);
+        return (
+          <AllocationFields
+            key={income.ruleId}
+            ruleId={income.ruleId}
+            title={names.get(income.ruleId) ?? "収入"}
+            cap={income.amount}
+            accounts={accounts}
+            initial={Object.fromEntries(source.map((row) => [row.asset_account_id, row.amount]))}
+          />
+        );
+      })}
+      {error ? <p className="text-sm text-expense">{error}</p> : null}
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
+      >
+        {pending ? "保存しています…" : custom ? "この期の割り振りを保存" : "この期だけ保存"}
+      </button>
+    </form>
+  );
+}
+
+function AllocationFields({
+  ruleId,
+  title,
+  cap,
+  accounts,
+  initial,
+}: {
+  ruleId: string;
+  title: string;
+  cap: number;
+  accounts: { id: string; name: string }[];
+  initial: Record<string, number>;
+}) {
+  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(accounts.map((account) => [account.id, String(initial[account.id] ?? "")])),
+  );
+  const used = accounts.reduce((sum, account) => sum + (Number(amounts[account.id]) || 0), 0);
+  const left = cap - used;
+  return (
+    <fieldset className="grid gap-2 rounded-lg border border-line/80 p-3">
+      <legend className="px-1 text-sm font-medium">
+        {title}
+        <span className="ml-2 font-normal text-muted">{formatYen(cap)}</span>
+      </legend>
+      <input type="hidden" name={`cap__${ruleId}`} value={cap} />
+      <div className="grid gap-2 sm:grid-cols-2">
+        {accounts.map((account) => (
+          <label key={account.id} className="grid gap-1 text-sm">
+            <span className="text-muted">{account.name}</span>
+            <input
+              name={`a__${ruleId}__${account.id}`}
+              type="number"
+              min={0}
+              value={amounts[account.id] ?? ""}
+              onChange={(event) =>
+                setAmounts((current) => ({ ...current, [account.id]: event.target.value }))
+              }
+              className="rounded-md border border-line bg-white px-3 py-2"
+              placeholder="0"
+            />
+          </label>
+        ))}
+      </div>
+      <p className={`text-xs ${left < 0 ? "text-expense" : "text-muted"}`}>
+        残り {formatYen(left)}
+      </p>
+    </fieldset>
+  );
+}
+
+function AccountSelect({
+  name,
+  label,
+  accounts,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  accounts: { id: string; name: string }[];
+  defaultValue: string;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-muted">{label}</span>
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="rounded-md border border-line bg-white px-3 py-2"
+      >
+        <option value="">指定しない</option>
+        {accounts.map((account) => (
+          <option key={account.id} value={account.id}>
+            {account.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

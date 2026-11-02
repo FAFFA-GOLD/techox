@@ -536,35 +536,78 @@ export type CashflowPlanRow = {
   daily_budget: number;
   transport_budget: number;
   adjustment: number;
+  daily_account_id?: string | null;
+  transport_account_id?: string | null;
 };
 
-export type CashflowPeriodRow = CashflowPlanRow & { period_start: string };
+export type CashflowPeriodRow = {
+  period_start: string;
+  daily_budget: number;
+  transport_budget: number;
+  adjustment: number;
+};
+
+export type CashflowAllocationRow = {
+  scheduled_rule_id: string;
+  asset_account_id: string;
+  amount: number;
+};
+
+export type CashflowAllocationPeriodRow = CashflowAllocationRow & {
+  period_start: string;
+};
 
 export async function fetchCashflowPlan(): Promise<{
   base: CashflowPlanRow | null;
   periods: CashflowPeriodRow[];
+  allocations: CashflowAllocationRow[];
+  periodAllocations: CashflowAllocationPeriodRow[];
   error: string | null;
 }> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { base: null, periods: [], error: null };
-  const [baseResult, periodResult] = await Promise.all([
-    supabase
+  if (!user) {
+    return { base: null, periods: [], allocations: [], periodAllocations: [], error: null };
+  }
+  const empty = { base: null, periods: [], allocations: [], periodAllocations: [], error: null };
+  let baseResult = await supabase
+    .from("cashflow_plan")
+    .select("daily_budget, transport_budget, adjustment, daily_account_id, transport_account_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (baseResult.error?.message.includes("daily_account_id")) {
+    baseResult = await supabase
       .from("cashflow_plan")
       .select("daily_budget, transport_budget, adjustment")
       .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("cashflow_plan_periods")
-      .select("period_start, daily_budget, transport_budget, adjustment")
-      .eq("user_id", user.id),
-  ]);
-  const error = baseResult.error?.message ?? periodResult.error?.message ?? null;
+      .maybeSingle();
+  }
+  const periodResult = await supabase
+    .from("cashflow_plan_periods")
+    .select("period_start, daily_budget, transport_budget, adjustment")
+    .eq("user_id", user.id);
+  const allocationResult = await supabase
+    .from("cashflow_income_allocations")
+    .select("scheduled_rule_id, asset_account_id, amount")
+    .eq("user_id", user.id);
+  const periodAllocationResult = await supabase
+    .from("cashflow_income_allocation_periods")
+    .select("period_start, scheduled_rule_id, asset_account_id, amount")
+    .eq("user_id", user.id);
+  const error =
+    baseResult.error?.message ??
+    periodResult.error?.message ??
+    allocationResult.error?.message ??
+    periodAllocationResult.error?.message ??
+    null;
+  if (!baseResult.data && !periodResult.data && error) return { ...empty, error };
   return {
     base: (baseResult.data as CashflowPlanRow | null) ?? null,
     periods: (periodResult.data as CashflowPeriodRow[]) ?? [],
+    allocations: (allocationResult.data as CashflowAllocationRow[]) ?? [],
+    periodAllocations: (periodAllocationResult.data as CashflowAllocationPeriodRow[]) ?? [],
     error,
   };
 }
