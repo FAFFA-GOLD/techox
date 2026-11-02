@@ -346,7 +346,22 @@ function numberCell(value: number): string {
 }
 
 function formulaNumber(formula: string, value: number): string {
-  return `<Cell ss:StyleID="n" ss:Formula="${xmlText(formula)}"><Data ss:Type="Number">${formatNumber(value)}</Data></Cell>`;
+  return `<Cell ss:StyleID="n" ss:Formula="${xmlText(toR1C1(formula))}"><Data ss:Type="Number">${formatNumber(value)}</Data></Cell>`;
+}
+
+/** SpreadsheetML の数式は R1C1。A1 のまま出すと 'D3' という名前になる。 */
+function toR1C1(formula: string): string {
+  return formula.replace(/[A-Z]+\d+/g, (cell) => {
+    const match = /^([A-Z]+)(\d+)$/.exec(cell);
+    if (!match) return cell;
+    return `R${match[2]}C${columnIndex(match[1])}`;
+  });
+}
+
+function columnIndex(letters: string): number {
+  let index = 0;
+  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
+  return index;
 }
 
 function formatNumber(value: number): string {
