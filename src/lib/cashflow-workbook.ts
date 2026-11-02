@@ -29,7 +29,7 @@ export function buildCashflowWorkbookXml(input: {
   const departments = departmentList(input.accounts, input.lines);
   const built = buildDepartmentRows(projected, input.lines, departments, input.accounts);
   const sheets = [
-    worksheet("期間", periodRows(projected, built.rows, departments.length)),
+    worksheet("期間", periodRows(projected, built.rows)),
     worksheet("部門", departmentSheetRows(built.rows, departments.length)),
     worksheet("明細", detailRows(input.lines)),
     worksheet("残高", balanceRows(input.accounts)),
@@ -180,7 +180,7 @@ function guideRows(today: string): string[][] {
   const lines = [
     "キャッシュフロー確認用",
     `出力日 ${today}。画面の表と同じ計算です。`,
-    "支出はマイナスです。期末は数式なので、明細の金額を変えると部門と期間の期末が動きます。",
+    "支出はマイナスです。給料・固定費などの金額はそのまま入っています。期末と差は、同じ行の足し算です。",
     "いまの期間の期首は、今日の部門残高です。今日までの入出金は残高に入っているので、給料・広告・固定費は明日以降だけ足します。",
     "先の期間は、前の期末を期首にして、その期間の収入と固定費を全部入れます。",
     "デイリーと交通費は、いまの期間は設定額から記録済みを引いた残りです。先の期間は設定額を全部引きます。",
@@ -192,11 +192,7 @@ function guideRows(today: string): string[][] {
   return lines.map((line) => [textCell(line)]);
 }
 
-function periodRows(
-  projected: CashflowRow[],
-  departments: DepartmentSheetRow[],
-  departmentCount: number,
-): string[][] {
+function periodRows(projected: CashflowRow[], departments: DepartmentSheetRow[]): string[][] {
   const header = [
     "期間",
     "開始",
@@ -222,18 +218,12 @@ function periodRows(
     const opening = sum((line) => line.opening);
     const kindSum = (kind: Kind) => sum((line) => line.amounts[kind]);
     const ending = sum((line) => line.ending);
-    const first = 2 + index * departmentCount;
-    const last = first + departmentCount - 1;
-    const sumColumn = (column: string, value: number) =>
-      departmentCount <= 0
-        ? numberCell(value)
-        : formulaNumber(`=サム('部門'!${column}${first}:${column}${last})`, value);
     return [
       textCell(row.period.label),
       textCell(row.period.start),
       textCell(row.period.end),
-      sumColumn("D", opening),
-      ...KINDS.map((kind, kindIndex) => sumColumn(String.fromCharCode("E".charCodeAt(0) + kindIndex), kindSum(kind))),
+      numberCell(opening),
+      ...KINDS.map((kind) => numberCell(kindSum(kind))),
       formulaNumber(`=D${excelRow}+E${excelRow}+F${excelRow}+G${excelRow}+H${excelRow}+I${excelRow}+J${excelRow}+K${excelRow}+L${excelRow}`, ending),
       numberCell(row.ending),
       formulaNumber(`=M${excelRow}-N${excelRow}`, ending - row.ending),
@@ -264,12 +254,7 @@ function departmentSheetRows(rows: DepartmentSheetRow[], departmentCount: number
   const body = rows.map((row, index) => {
     const excelRow = index + 2;
     const previous = index >= departmentCount ? excelRow - departmentCount : 0;
-    const kindCells = KINDS.map((kind) =>
-      formulaNumber(
-        `=サムイフス('明細'!G:G,'明細'!A:A,A${excelRow},'明細'!D:D,C${excelRow},'明細'!E:E,"${kind}")`,
-        row.amounts[kind],
-      ),
-    );
+    const kindCells = KINDS.map((kind) => numberCell(row.amounts[kind]));
     return [
       textCell(row.periodStart),
       textCell(row.periodEnd),
@@ -337,7 +322,7 @@ function balanceRows(accounts: CashflowWorkbookAccount[]): string[][] {
   body.push([
     textCell("合計", "h"),
     lastDataRow >= 2
-      ? formulaNumber(`=サム(B2:B${lastDataRow})`, cachedTotal)
+      ? formulaNumber(`=${Array.from({ length: lastDataRow - 1 }, (_, index) => `B${index + 2}`).join("+")}`, cachedTotal)
       : numberCell(0),
     textCell(""),
   ]);
