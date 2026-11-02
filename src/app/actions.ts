@@ -2018,10 +2018,28 @@ function parsePlanYen(raw: FormDataEntryValue | null, allowNegative: boolean): n
 }
 
 function cashflowPlanError(message: string): string {
+  if (message.includes("cashflow_income_allocation") || message.includes("daily_account_id")) {
+    return "収入の割り振りには supabase/migrations/023_cashflow_allocations.sql の実行が必要です";
+  }
   if (message.includes("cashflow_plan")) {
     return "キャッシュフローには supabase/migrations/021_cashflow_plan.sql の実行が必要です";
   }
   return migrationHint(message) ?? message;
+}
+
+function readAllocations(formData: FormData): Map<string, { accountId: string; amount: number }[]> {
+  const byRule = new Map<string, { accountId: string; amount: number }[]>();
+  for (const [key, raw] of formData.entries()) {
+    if (!key.startsWith("a__")) continue;
+    const [, ruleId, accountId] = key.split("__");
+    if (!ruleId || !accountId) continue;
+    const amount = parsePlanYen(raw, false);
+    if (amount == null || amount <= 0) continue;
+    const list = byRule.get(ruleId) ?? [];
+    list.push({ accountId, amount });
+    byRule.set(ruleId, list);
+  }
+  return byRule;
 }
 
 export async function saveCashflowPlan(formData: FormData) {
@@ -2032,12 +2050,16 @@ export async function saveCashflowPlan(formData: FormData) {
   if (daily == null || transport == null || adjustment == null) {
     return { error: "金額を確認してください" };
   }
+  const dailyAccountId = parseAssetAccountId(formData.get("daily_account_id"));
+  const transportAccountId = parseAssetAccountId(formData.get("transport_account_id"));
   const { error } = await supabase.from("cashflow_plan").upsert(
     {
       user_id: user.id,
       daily_budget: daily,
       transport_budget: transport,
       adjustment,
+      daily_account_id: dailyAccountId,
+      transport_account_id: transportAccountId,
     },
     { onConflict: "user_id" },
   );
@@ -2077,6 +2099,50 @@ export async function saveCashflowPeriod(formData: FormData) {
     { onConflict: "user_id,period_start" },
   );
   if (error) return { error: cashflowPlanError(error.message) };
+  revalidateMoney();
+  return { ok: true as const };
+}
+
+export async function saveIncomeAllocations(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const periodStart = String(formData.get("period_start") ?? "");
+  const forPeriod = /^\d{4}-\d{2}-\d{2}$/.test(periodStart);
+  const byRule = readAllocations(formData);
+  for (const [ruleId, parts] of byRule) {
+    const cap = parsePlanYen(formData.get(`cap__${ruleId}`), false);
+    const used = parts.reduce((sum, part) => sum + part.amount, 0);
+    if (cap != null && used > cap) {
+      return { error: "割り振りが収入の額を超えています" };
+    }
+  }
+  const rows = [...byRule.entries()].flatMap(([ruleId, parts]) =>
+    parts.map((part) => ({
+      user_id: user.id,
+      scheduled_rule_id: ruleId,
+      asset_account_id: part.accountId,
+      amount: part.amount,
+      ...(forPeriod ? { period_start: periodStart } : {}),
+    })),
+  );
+  if (forPeriod) {
+    const removed = await supabase
+      .from("cashflow_income_allocation_periods")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("period_start", periodStart);
+    if (removed.error) return { error: cashflowPlanError(removed.error.message) };
+    if (rows.length > 0) {
+      const inserted = await supabase.from("cashflow_income_allocation_periods").insert(rows);
+      if (inserted.error) return { error: cashflowPlanError(inserted.error.message) };
+    }
+  } else {
+    const removed = await supabase.from("cashflow_income_allocations").delete().eq("user_id", user.id);
+    if (removed.error) return { error: cashflowPlanError(removed.error.message) };
+    if (rows.length > 0) {
+      const inserted = await supabase.from("cashflow_income_allocations").insert(rows);
+      if (inserted.error) return { error: cashflowPlanError(inserted.error.message) };
+    }
+  }
   revalidateMoney();
   return { ok: true as const };
 }
