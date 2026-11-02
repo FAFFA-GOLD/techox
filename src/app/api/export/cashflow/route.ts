@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+// 通常の xlsx。数式は D2+E2 の形で、'D2' にはしない。
 import { buildCashflowRows, type CashflowAuditLine } from "@/lib/cashflow-forecast";
 import { loadCashflowModel } from "@/lib/cashflow-model";
 import { buildCashflowWorkbook } from "@/lib/cashflow-workbook";
