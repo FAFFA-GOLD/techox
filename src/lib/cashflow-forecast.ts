@@ -70,7 +70,7 @@ export type CashflowRow = {
   custom: boolean;
   phase: "past" | "now" | "future";
   items: CashflowAuditLine[];
-  /** どちらの銀行でもない取引登録。日々の支出と交通費は含めない */
+  /** どちらの銀行でもない取引登録。カレンダーの日々の支出と交通費は含めない */
   outside: CashflowOutsideItem[];
 };
 
@@ -187,8 +187,14 @@ function eventsForForecast(
   ruleNames: Map<string, string>,
   categoryNames: Map<string, string>,
 ): CashflowEvent[] {
+  const rulesById = new Map(input.rules.map((rule) => [rule.id, rule]));
+  const events = input.events.map((event) => {
+    if (event.accountId || !event.scheduledRuleId) return event;
+    const accountId = rulesById.get(event.scheduledRuleId)?.asset_account_id ?? null;
+    return accountId ? { ...event, accountId } : event;
+  });
   const have = new Set(
-    input.events
+    events
       .filter((event) => event.scheduledRuleId)
       .map((event) => `${event.scheduledRuleId}|${event.date}`),
   );
@@ -213,7 +219,7 @@ function eventsForForecast(
       });
     }
   }
-  return [...input.events, ...synthetic];
+  return [...events, ...synthetic];
 }
 
 function buildPeriodRow(input: {
@@ -245,7 +251,7 @@ function buildPeriodRow(input: {
     if (event.date < CASHFLOW_HISTORY_CUTOFF) continue;
     if (!inRange(event.date, input.period.start, input.period.end)) continue;
     const name = eventName(event, input.ruleNames);
-    if (isDailySpend(event)) continue;
+    if (isDailySpend(event) && !countsAsBankBill(event, input.aichiIds, input.docomoIds)) continue;
     if (event.kind === "income" && incomeKind(name) === "salary") {
       salaryTotal += event.amount;
       if (salaryDate == null || event.date < salaryDate) salaryDate = event.date;
@@ -358,6 +364,15 @@ function isDailySpend(event: CashflowEvent): boolean {
   const name = event.categoryName?.trim();
   if (!name) return false;
   return isPocketSpendCategory(name) || isTransportCategory(name);
+}
+
+/** 取引登録で、あいち銀行かドコモ銀行から引く分。用途が日々の支出でも期末に入れる */
+function countsAsBankBill(
+  event: CashflowEvent,
+  aichiIds: Set<string>,
+  docomoIds: Set<string>,
+): boolean {
+  return Boolean(event.scheduledRuleId) && bankOf(event.accountId, aichiIds, docomoIds) != null;
 }
 
 function bankOf(

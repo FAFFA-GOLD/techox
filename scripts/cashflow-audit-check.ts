@@ -51,6 +51,9 @@ const rules = [
   rule("home", "家", "expense", "docomo"),
   rule("rakuten", "楽天銀行", "expense", "docomo"),
   rule("other", "その他引き落とし", "expense", "docomo"),
+  rule("rakuten-card", "楽天カード支出", "expense", "docomo"),
+  rule("paypay", "paypay支払い支出", "expense", "docomo"),
+  rule("lunch-rpay", "毎日の昼食", "expense", "rpay"),
 ];
 
 const events = [
@@ -62,6 +65,9 @@ const events = [
   { date: "2026-11-05", amount: 42000, kind: "expense" as const, categoryName: null, scheduledRuleId: "rakuten", accountId: "docomo", label: "楽天銀行" },
   { date: "2026-11-20", amount: 10000, kind: "expense" as const, categoryName: null, scheduledRuleId: "other", accountId: "docomo", label: "その他引き落とし" },
   { date: "2026-11-12", amount: 800, kind: "expense" as const, categoryName: "昼食", scheduledRuleId: null, accountId: "rpay", label: "昼食" },
+  { date: "2026-11-27", amount: 15000, kind: "expense" as const, categoryName: "その他", scheduledRuleId: "rakuten-card", accountId: "docomo", label: "楽天カード支出" },
+  { date: "2026-11-27", amount: 8000, kind: "expense" as const, categoryName: "その他", scheduledRuleId: "paypay", accountId: null, label: "paypay支払い支出" },
+  { date: "2026-11-18", amount: 600, kind: "expense" as const, categoryName: "昼食", scheduledRuleId: "lunch-rpay", accountId: "rpay", label: "毎日の昼食" },
   { date: "2026-11-15", amount: 9000, kind: "expense" as const, categoryName: null, scheduledRuleId: "olive-bill", accountId: "olive", label: "Oliveの支払い" },
   { date: next.start, amount: 300000, kind: "income" as const, categoryName: null, scheduledRuleId: "salary", accountId: "aichi", label: "給与" },
   { date: next.start, amount: 8000, kind: "income" as const, categoryName: null, scheduledRuleId: "ad", accountId: "aichi", label: "広告収入" },
@@ -93,7 +99,7 @@ const gaps = cashflowWorkbookGaps(rows);
 const current = rows.find((row) => row.period.start === now.start);
 const following = rows.find((row) => row.period.start === next.start);
 const aichiEnding = 75599 + 60000 + 10000 - 64419 - 3600;
-const docomoEnding = 27093 + 240000 - 50000 - 42000 - 10000;
+const docomoEnding = 27093 + 240000 - 50000 - 42000 - 10000 - 15000 - 8000;
 if (!current || current.aichi.opening !== 75599 || current.docomo.opening !== 27093) {
   gaps.push(`期首 ${current?.aichi.opening} ${current?.docomo.opening}`);
 }
@@ -103,6 +109,11 @@ if (!current || current.aichi.salary !== 60000 || current.docomo.salary !== 2400
   gaps.push(`給料配分 ${current?.aichi.salary} ${current?.docomo.salary}`);
 }
 if (current?.items.some((item) => item.item.includes("昼食"))) gaps.push("昼食が入りました");
+if (!current?.items.some((item) => item.item.includes("楽天カード"))) gaps.push("楽天カードがドコモに入っていません");
+if (!current?.items.some((item) => item.item.includes("paypay"))) gaps.push("paypayがドコモに入っていません");
+if (current?.outside.some((item) => item.item.includes("paypay") || item.item.includes("楽天カード"))) {
+  gaps.push("カードかpaypayが対象外に出ました");
+}
 if (current?.outside.some((item) => item.item.includes("Olive")) !== true) gaps.push("Oliveが対象外に出ていません");
 if (following?.aichi.opening !== aichiEnding || following?.docomo.opening !== docomoEnding) {
   gaps.push("翌月の期首が前期末ではありません");
