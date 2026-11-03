@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type Props = {
@@ -11,6 +11,12 @@ type Props = {
   children: React.ReactNode;
 };
 
+const CloseContext = createContext<(() => void) | null>(null);
+
+export function useClosePopover() {
+  return useContext(CloseContext);
+}
+
 export function EditPopover({
   buttonLabel = "変更",
   title,
@@ -19,49 +25,86 @@ export function EditPopover({
   children,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const close = () => setOpen(false);
+
+  function openPopover() {
+    let el = hostRef.current;
+    if (!el || !document.body.contains(el)) {
+      el = document.createElement("div");
+      el.dataset.editPopoverHost = "true";
+      document.body.appendChild(el);
+      hostRef.current = el;
+    }
+    setHost(el);
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    return () => {
+      hostRef.current?.remove();
+      hostRef.current = null;
+      clearDetachedBackdrops();
+    };
+  }, []);
+
+  // 保存で画面を更新したあと、閉じた幕が body に残ると、その後のボタンが押せなくなる。
+  useEffect(() => {
+    if (open) return;
+    hostRef.current?.replaceChildren();
+    clearDetachedBackdrops();
+  }, [open]);
 
   return (
-    <>
+    <CloseContext.Provider value={close}>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-          className={
+        onClick={openPopover}
+        className={
           buttonClassName ??
           "whitespace-nowrap rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
         }
       >
         {buttonLabel}
       </button>
-      {open
+      {open && host
         ? createPortal(
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-3 sm:items-center sm:p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className={`my-auto grid max-h-[85dvh] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-auto rounded-xl border border-line bg-white p-4 ${
-              wide ? "max-w-3xl" : "max-w-md"
-            }`}
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-label={title}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold">{title}</h3>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="text-xs text-muted hover:text-ink"
+            <div
+              data-edit-popover-backdrop="true"
+              className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/30 p-3 sm:items-center sm:p-4"
+              onMouseDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                event.preventDefault();
+                close();
+              }}
+            >
+              <div
+                className={`my-auto grid max-h-[85dvh] w-full min-w-0 gap-3 overflow-x-hidden overflow-y-auto rounded-xl border border-line bg-white p-4 ${
+                  wide ? "max-w-3xl" : "max-w-md"
+                }`}
+                onMouseDown={(event) => event.stopPropagation()}
+                role="dialog"
+                aria-label={title}
               >
-                閉じる
-              </button>
-            </div>
-            {children}
-          </div>
-        </div>,
-            document.body,
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-bold">{title}</h3>
+                  <button type="button" onClick={close} className="text-xs text-muted hover:text-ink">
+                    閉じる
+                  </button>
+                </div>
+                {children}
+              </div>
+            </div>,
+            host,
           )
         : null}
-    </>
+    </CloseContext.Provider>
   );
+}
+
+function clearDetachedBackdrops() {
+  document.querySelectorAll("[data-edit-popover-backdrop]").forEach((node) => {
+    if (!node.closest("[data-edit-popover-host]")) node.remove();
+  });
 }

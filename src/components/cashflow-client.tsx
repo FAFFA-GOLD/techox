@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveCashflowBankPeriod, saveCashflowBanks } from "@/app/actions";
-import { EditPopover } from "@/components/edit-popover";
+import { EditPopover, useClosePopover } from "@/components/edit-popover";
 import {
   CASHFLOW_AICHI_BANK,
   CASHFLOW_DOCOMO_BANK,
@@ -288,17 +288,24 @@ function PeriodForm({
   custom: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const router = useRouter();
+  const closePopover = useClosePopover();
   return (
     <form
       className="grid gap-2"
-      action={(fd) => {
-        startTransition(async () => {
-          const res = await saveCashflowBankPeriod(fd);
-          setError(res && "error" in res ? res.error ?? null : null);
-          if (!res || !("error" in res) || !res.error) router.refresh();
-        });
+      action={async (fd) => {
+        setPending(true);
+        const res = await saveCashflowBankPeriod(fd);
+        const message = res && "error" in res ? res.error ?? null : null;
+        setError(message);
+        if (message) {
+          setPending(false);
+          return;
+        }
+        closePopover?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        router.refresh();
       }}
     >
       <p className="text-xs text-muted">{label}</p>
