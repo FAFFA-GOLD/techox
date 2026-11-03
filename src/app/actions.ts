@@ -2026,6 +2026,16 @@ function parsePlanYen(raw: FormDataEntryValue | null, allowNegative: boolean): n
 }
 
 function cashflowPlanError(message: string): string {
+  if (
+    message.includes("salary_retain") ||
+    message.includes("aichi_opening") ||
+    message.includes("docomo_opening") ||
+    message.includes("opening_period_start") ||
+    message.includes("aichi_adjustment") ||
+    message.includes("docomo_adjustment")
+  ) {
+    return "銀行別のキャッシュフローには supabase/migrations/025_cashflow_banks.sql の実行が必要です";
+  }
   if (message.includes("cashflow_income_allocation") || message.includes("daily_account_id")) {
     return "収入の割り振りには supabase/migrations/023_cashflow_allocations.sql の実行が必要です";
   }
@@ -2033,6 +2043,92 @@ function cashflowPlanError(message: string): string {
     return "キャッシュフローには supabase/migrations/021_cashflow_plan.sql の実行が必要です";
   }
   return migrationHint(message) ?? message;
+}
+
+export async function saveCashflowBanks(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const salaryRetain = parsePlanYen(formData.get("salary_retain"), false);
+  const aichiOpening = parsePlanYen(formData.get("aichi_opening"), true);
+  const docomoOpening = parsePlanYen(formData.get("docomo_opening"), true);
+  const openingPeriodStart = String(formData.get("opening_period_start") ?? "");
+  if (salaryRetain == null || aichiOpening == null || docomoOpening == null) {
+    return { error: "金額を確認してください" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(openingPeriodStart)) return { error: "期間が不正です" };
+  const existing = await supabase
+    .from("cashflow_plan")
+    .select("daily_budget, transport_budget, adjustment, daily_account_id, transport_account_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existing.error && !existing.error.message.includes("daily_account_id")) {
+    return { error: cashflowPlanError(existing.error.message) };
+  }
+  const current = existing.data as {
+    daily_budget?: number;
+    transport_budget?: number;
+    adjustment?: number;
+    daily_account_id?: string | null;
+    transport_account_id?: string | null;
+  } | null;
+  const { error } = await supabase.from("cashflow_plan").upsert(
+    {
+      user_id: user.id,
+      daily_budget: current?.daily_budget ?? 0,
+      transport_budget: current?.transport_budget ?? 0,
+      adjustment: current?.adjustment ?? 0,
+      daily_account_id: current?.daily_account_id ?? null,
+      transport_account_id: current?.transport_account_id ?? null,
+      salary_retain: salaryRetain,
+      aichi_opening: aichiOpening,
+      docomo_opening: docomoOpening,
+      opening_period_start: openingPeriodStart,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) return { error: cashflowPlanError(error.message) };
+  revalidateMoney();
+  return { ok: true as const };
+}
+
+export async function saveCashflowBankPeriod(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const periodStart = String(formData.get("period_start") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) return { error: "期間が不正です" };
+  const reset = String(formData.get("reset") ?? "") === "1";
+  const salaryRetain = reset ? null : parsePlanYen(formData.get("salary_retain"), false);
+  const aichiAdjustment = reset ? 0 : parsePlanYen(formData.get("aichi_adjustment"), true);
+  const docomoAdjustment = reset ? 0 : parsePlanYen(formData.get("docomo_adjustment"), true);
+  if (!reset && (salaryRetain == null || aichiAdjustment == null || docomoAdjustment == null)) {
+    return { error: "金額を確認してください" };
+  }
+  const existing = await supabase
+    .from("cashflow_plan_periods")
+    .select("daily_budget, transport_budget, adjustment")
+    .eq("user_id", user.id)
+    .eq("period_start", periodStart)
+    .maybeSingle();
+  if (existing.error) return { error: cashflowPlanError(existing.error.message) };
+  const current = existing.data as {
+    daily_budget?: number;
+    transport_budget?: number;
+    adjustment?: number;
+  } | null;
+  const { error } = await supabase.from("cashflow_plan_periods").upsert(
+    {
+      user_id: user.id,
+      period_start: periodStart,
+      daily_budget: current?.daily_budget ?? 0,
+      transport_budget: current?.transport_budget ?? 0,
+      adjustment: current?.adjustment ?? 0,
+      salary_retain: salaryRetain,
+      aichi_adjustment: aichiAdjustment,
+      docomo_adjustment: docomoAdjustment,
+    },
+    { onConflict: "user_id,period_start" },
+  );
+  if (error) return { error: cashflowPlanError(error.message) };
+  revalidateMoney();
+  return { ok: true as const };
 }
 
 function readAllocations(formData: FormData): Map<string, { accountId: string; amount: number }[]> {

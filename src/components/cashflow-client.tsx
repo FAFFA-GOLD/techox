@@ -2,57 +2,37 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { saveCashflowPeriod, saveCashflowPlan, saveIncomeAllocations } from "@/app/actions";
+import { saveCashflowBankPeriod, saveCashflowBanks } from "@/app/actions";
 import { EditPopover } from "@/components/edit-popover";
-import type {
-  CashflowEndingBreakdown,
-  CashflowPlanAmounts,
-  CashflowRow,
+import {
+  CASHFLOW_AICHI_BANK,
+  CASHFLOW_DOCOMO_BANK,
+  type CashflowAuditLine,
+  type CashflowBankColumn,
+  type CashflowRow,
 } from "@/lib/cashflow-forecast";
 import { formatYen } from "@/lib/money";
 
 export function CashflowClient({
   rows,
-  savings,
-  base,
+  openingPeriodStart,
+  aichiOpening,
+  docomoOpening,
+  salaryRetain,
   savedBase,
-  accounts,
-  incomeRules,
-  allocations,
-  periodAllocations,
   loadError,
 }: {
   rows: CashflowRow[];
-  savings: number;
-  base: CashflowPlanAmounts;
+  openingPeriodStart: string;
+  aichiOpening: number;
+  docomoOpening: number;
+  salaryRetain: number;
   savedBase: boolean;
-  accounts: { id: string; name: string }[];
-  incomeRules: { id: string; name: string; amount: number }[];
-  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
-  periodAllocations: {
-    period_start: string;
-    scheduled_rule_id: string;
-    asset_account_id: string;
-    amount: number;
-  }[];
   loadError: string | null;
 }) {
-  const projected = rows.filter((row) => row.phase !== "past");
-  const lowest = projected.reduce(
-    (min, row) => Math.min(min, row.ending),
-    Number.POSITIVE_INFINITY,
-  );
-  const firstNegative = projected.find((row) => row.ending < 0) ?? null;
-  const now = rows.find((row) => row.phase === "now") ?? null;
-  const pair = (withSavings: number) => (
-    <>
-      {formatYen(withSavings - savings)}
-      <span className="ml-1 font-normal text-muted">（{formatYen(withSavings)}）</span>
-    </>
-  );
-  const orderedIncomeRules = incomeRules
-    .filter((rule) => isAllocatableIncome(rule.name))
-    .sort(compareIncomeRules);
+  const tracked = rows.filter((row) => row.tracked);
+  const firstNegative = tracked.find((row) => row.aichi.ending < 0 || row.docomo.ending < 0) ?? null;
+  const now = tracked.find((row) => row.phase === "now") ?? null;
   const yearGroups = groupRowsByYear(rows);
 
   return (
@@ -70,41 +50,34 @@ export function CashflowClient({
           </a>
         </div>
         <p className="mt-1 text-sm text-muted">
-          給料日（月末。土日なら前の平日）から、次の給料日の前日までを1か月として、貯金込みのいまの総資産から先を見ます。起点は2026年10月30日のまま残し、月が進んでもこの表の先頭から消えません。2026年10月29日までは旧履歴です。終わった期間は実績、いまの期間は色を付けています。期末の括弧内は貯金を含んだ額です。
+          あいち銀行とドコモ銀行だけを追います。開始残高は給料が入る前の残高で、その残高から残す給料は引きません。給料のうち残す額をあいち銀行へ、残りをドコモ銀行へ入れます。広告収入はあいち銀行です。取引登録の当月分は、登録した銀行からまとめて引きます。日々の支出と交通費は入れません。
         </p>
       </div>
       {loadError ? <p className="text-sm text-expense">{loadError}</p> : null}
       <section className="grid gap-2 rounded-xl border border-line/80 bg-surface p-4 sm:grid-cols-3">
+        <BankNow label={CASHFLOW_AICHI_BANK} amount={now?.aichi.ending ?? null} />
+        <BankNow label={CASHFLOW_DOCOMO_BANK} amount={now?.docomo.ending ?? null} />
         <div>
-          <p className="text-xs text-muted">いまの期末見込みの最低</p>
-          <p className={`text-xl font-bold tabular-nums ${lowest - savings < 0 ? "text-expense" : ""}`}>
-            {rows.length === 0 ? "—" : pair(lowest)}
-          </p>
-        </div>
-        <div className="sm:col-span-2">
           <p className="text-xs text-muted">最初にマイナスになる期間</p>
-          <p className="text-sm">
+          <p className="mt-1 text-sm">
             {firstNegative
-              ? `${firstNegative.period.label} ${formatYen(firstNegative.ending - savings)}（${formatYen(firstNegative.ending)}）`
+              ? `${monthDayLabel(firstNegative.period.start, firstNegative.period.end)} ${negativeBank(firstNegative)}`
               : "この範囲ではマイナスになりません"}
           </p>
         </div>
       </section>
-      <BasePlanForm base={base} saved={savedBase} accounts={accounts} />
-      <IncomeAllocationForm
-        incomeRules={orderedIncomeRules}
-        accounts={accounts}
-        allocations={allocations}
+      <OpeningForm
+        openingPeriodStart={openingPeriodStart}
+        aichiOpening={aichiOpening}
+        docomoOpening={docomoOpening}
+        salaryRetain={salaryRetain}
+        saved={savedBase}
       />
       {yearGroups.length > 0 ? (
         <section className="grid gap-2 sm:grid-cols-3">
           {yearGroups.map((group) => {
-            const projectedInYear = group.rows.filter((row) => row.phase !== "past");
-            const closing = projectedInYear[projectedInYear.length - 1] ?? null;
-            const lowestInYear = projectedInYear.reduce(
-              (min, row) => Math.min(min, row.ending),
-              Number.POSITIVE_INFINITY,
-            );
+            const trackedInYear = group.rows.filter((row) => row.tracked);
+            const closing = trackedInYear[trackedInYear.length - 1] ?? null;
             const containsNow = group.rows.some((row) => row.phase === "now");
             return (
               <a
@@ -123,17 +96,13 @@ export function CashflowClient({
                   ) : null}
                 </p>
                 <p className="mt-1 text-[11px] text-muted">この年の最後の期末</p>
-                <p
-                  className={`text-sm font-semibold tabular-nums ${
-                    closing && closing.ending - savings < 0 ? "text-expense" : ""
-                  }`}
-                >
-                  {closing ? pair(closing.ending) : "実績のみ"}
-                </p>
-                <p className="mt-1 text-[11px] text-muted">
+                <p className="text-sm font-semibold tabular-nums">
                   {closing
-                    ? `この年の最低 ${formatYen(lowestInYear - savings)}（${formatYen(lowestInYear)}）`
-                    : "この年は終わった期間だけです"}
+                    ? `${CASHFLOW_AICHI_BANK} ${formatYen(closing.aichi.ending)}`
+                    : "対象の期間はありません"}
+                </p>
+                <p className="text-sm font-semibold tabular-nums">
+                  {closing ? `${CASHFLOW_DOCOMO_BANK} ${formatYen(closing.docomo.ending)}` : ""}
                 </p>
               </a>
             );
@@ -141,120 +110,89 @@ export function CashflowClient({
         </section>
       ) : null}
       <div className="min-w-0 overflow-x-auto rounded-xl border border-line/80">
-        <table className="w-full min-w-[48rem] text-left text-sm">
+        <table className="w-full min-w-[52rem] text-left text-sm">
           <thead className="bg-white/80 text-xs text-muted">
             <tr>
               <th className="px-2 py-2 font-medium">期間</th>
-              <th className="px-2 py-2 font-medium">期首</th>
-              <th className="px-2 py-2 font-medium">収入</th>
-              <th className="px-2 py-2 font-medium">取引の支出</th>
-              <th className="px-2 py-2 font-medium">デイリー</th>
-              <th className="px-2 py-2 font-medium">交通費</th>
-              <th className="px-2 py-2 font-medium">調整</th>
-              <th className="px-2 py-2 text-right font-medium">期末</th>
-              <th className="px-2 py-2 font-medium" />
-              <th className="sticky right-0 z-10 bg-white py-2 pl-2 pr-5 font-medium" />
+              <th className="px-2 py-2 font-medium">あいち期首</th>
+              <th className="px-2 py-2 font-medium">あいち期末</th>
+              <th className="px-2 py-2 font-medium">ドコモ期首</th>
+              <th className="px-2 py-2 font-medium">ドコモ期末</th>
+              <th className="sticky right-0 z-10 bg-white px-2 py-2 font-medium" />
             </tr>
           </thead>
           <tbody>
             {yearGroups.flatMap((group) => [
               <tr key={`year-${group.year}`} id={`cashflow-year-${group.year}`} className="bg-[#eef5f3]">
-                <td colSpan={10} className="px-2 py-2 text-sm font-bold text-accent-deep">
+                <td colSpan={6} className="px-2 py-2 text-sm font-bold text-accent-deep">
                   {group.year}年
-                  <span className="ml-2 text-xs font-normal text-muted">
-                    {group.rows.length}期
-                  </span>
+                  <span className="ml-2 text-xs font-normal text-muted">{group.rows.length}期</span>
                 </td>
               </tr>,
-              ...group.rows.map((row) => (
-              <tr
-                key={row.period.start}
-                id={row.phase === "now" ? "cashflow-now" : undefined}
-                className={
-                  row.phase === "now"
-                    ? "bg-[#eef5f3] ring-2 ring-inset ring-accent"
-                    : row.phase === "past"
-                      ? "bg-white/40 text-muted"
-                      : row.ending < 0
-                        ? "bg-red-50/80"
-                        : "bg-white/70"
-                }
-              >
-                <td className="px-2 py-2 whitespace-nowrap">
-                  {row.phase === "past" ? (
-                    <span className="mr-2 rounded-full border border-line px-2 py-0.5 text-[10px]">
-                      済
-                    </span>
-                  ) : null}
-                  {monthDayLabel(row.period.start, row.period.end)}
-                </td>
-                <td className="px-2 py-2 tabular-nums whitespace-nowrap">
-                  {row.phase === "past" ? "実績" : pair(row.opening)}
-                </td>
-                <td className="px-2 py-2 tabular-nums text-income">{formatYen(row.income)}</td>
-                <td className="px-2 py-2 tabular-nums text-expense">
-                  {formatYen(row.scheduledExpense)}
-                </td>
-                <td className="px-2 py-2 tabular-nums">{formatYen(row.daily)}</td>
-                <td className="px-2 py-2 tabular-nums">{formatYen(row.transport)}</td>
-                <td className="px-2 py-2 tabular-nums">{formatYen(row.adjustment)}</td>
-                <td
-                  className={`px-2 py-2 text-right font-semibold tabular-nums whitespace-nowrap ${
-                    row.phase !== "past" && row.ending - savings < 0 ? "text-expense" : ""
-                  }`}
-                >
-                  {row.phase === "past" ? "実績" : pair(row.ending)}
-                </td>
-                <td className="px-2 py-2 whitespace-nowrap">
-                  {row.phase === "past" || !row.breakdown ? null : (
-                    <EditPopover title={`${row.period.label} の期末`} buttonLabel="内訳">
-                      <EndingBreakdown
-                        breakdown={row.breakdown}
-                        savings={savings}
-                        openingLabel={row.phase === "now" ? "今日" : "期首"}
-                      />
-                    </EditPopover>
-                  )}
-                </td>
-                <td
-                  className={`sticky right-0 z-10 py-2 pl-2 pr-5 whitespace-nowrap ${
-                    row.phase === "now"
-                      ? "bg-[#eef5f3] shadow-[inset_0_2px_0_0_#0f766e,inset_0_-2px_0_0_#0f766e,inset_-2px_0_0_0_#0f766e]"
-                      : row.ending < 0
-                        ? "bg-red-50 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"
-                        : "bg-white shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.18)]"
-                  }`}
-                >
-                  <div className="flex items-center gap-1">
-                    {row.phase !== "past" &&
-                    row.incomes.some((income) =>
-                      orderedIncomeRules.some((rule) => rule.id === income.ruleId),
-                    ) ? (
-                      <EditPopover wide buttonLabel="割り振り" title={`${monthDayLabel(row.period.start, row.period.end)}の割り振り`}>
-                        <PeriodAllocationForm
-                          periodStart={row.period.start}
-                          incomes={row.incomes}
-                          incomeRules={orderedIncomeRules}
-                          accounts={accounts}
-                          allocations={allocations}
-                          periodAllocations={periodAllocations}
-                        />
-                      </EditPopover>
-                    ) : null}
-                    <EditPopover buttonLabel="編集" title="この期の予算">
-                      <PeriodForm
-                        periodStart={row.period.start}
-                        label={row.period.label}
-                        daily={row.planDaily}
-                        transport={row.planTransport}
-                        adjustment={row.planAdjustment}
-                        custom={row.custom}
-                      />
-                    </EditPopover>
-                  </div>
-                </td>
-              </tr>
-              )),
+              ...group.rows.map((row) => {
+                const negative = row.tracked && (row.aichi.ending < 0 || row.docomo.ending < 0);
+                return (
+                  <tr
+                    key={row.period.start}
+                    id={row.phase === "now" ? "cashflow-now" : undefined}
+                    className={
+                      row.phase === "now"
+                        ? "bg-[#eef5f3] ring-2 ring-inset ring-accent"
+                        : row.phase === "past"
+                          ? "bg-white/40 text-muted"
+                          : negative
+                            ? "bg-red-50/80"
+                            : "bg-white/70"
+                    }
+                  >
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      {row.phase === "now" ? (
+                        <span className="mr-2 rounded-full bg-accent px-2 py-0.5 text-[10px] text-white">いま</span>
+                      ) : null}
+                      {monthDayLabel(row.period.start, row.period.end)}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums whitespace-nowrap">
+                      {row.tracked ? formatYen(row.aichi.opening) : "—"}
+                    </td>
+                    <td className={`px-2 py-2 font-semibold tabular-nums whitespace-nowrap ${row.tracked && row.aichi.ending < 0 ? "text-expense" : ""}`}>
+                      {row.tracked ? formatYen(row.aichi.ending) : "—"}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums whitespace-nowrap">
+                      {row.tracked ? formatYen(row.docomo.opening) : "—"}
+                    </td>
+                    <td className={`px-2 py-2 font-semibold tabular-nums whitespace-nowrap ${row.tracked && row.docomo.ending < 0 ? "text-expense" : ""}`}>
+                      {row.tracked ? formatYen(row.docomo.ending) : "—"}
+                    </td>
+                    <td
+                      className={`sticky right-0 z-10 px-2 py-2 whitespace-nowrap ${
+                        row.phase === "now"
+                          ? "bg-[#eef5f3]"
+                          : negative
+                            ? "bg-red-50"
+                            : "bg-white"
+                      }`}
+                    >
+                      {row.tracked ? (
+                        <div className="flex items-center gap-1">
+                          <EditPopover title={`${monthDayLabel(row.period.start, row.period.end)} の内訳`} buttonLabel="内訳">
+                            <PeriodBreakdown row={row} />
+                          </EditPopover>
+                          <EditPopover buttonLabel="編集" title="この期の調整">
+                            <PeriodForm
+                              periodStart={row.period.start}
+                              label={row.period.label}
+                              salaryRetain={row.salaryRetain}
+                              aichiAdjustment={row.aichi.adjustment}
+                              docomoAdjustment={row.docomo.adjustment}
+                              custom={row.custom}
+                            />
+                          </EditPopover>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              }),
             ])}
           </tbody>
         </table>
@@ -263,42 +201,37 @@ export function CashflowClient({
   );
 }
 
-function isAllocatableIncome(name: string): boolean {
-  return !name.includes("貯金移動");
+function BankNow({ label, amount }: { label: string; amount: number | null }) {
+  return (
+    <div>
+      <p className="text-xs text-muted">{label}の期末見込み</p>
+      <p className={`text-xl font-bold tabular-nums ${amount != null && amount < 0 ? "text-expense" : ""}`}>
+        {amount == null ? "—" : formatYen(amount)}
+      </p>
+    </div>
+  );
 }
 
-function compareIncomeRules(a: { name: string }, b: { name: string }): number {
-  const rank = (name: string) => (name.includes("広告") ? 1 : 0);
-  return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "ja");
+function negativeBank(row: CashflowRow): string {
+  const parts = [
+    row.aichi.ending < 0 ? `${CASHFLOW_AICHI_BANK} ${formatYen(row.aichi.ending)}` : "",
+    row.docomo.ending < 0 ? `${CASHFLOW_DOCOMO_BANK} ${formatYen(row.docomo.ending)}` : "",
+  ].filter(Boolean);
+  return parts.join(" / ");
 }
 
-function monthDayLabel(start: string, end: string): string {
-  const fmt = (iso: string) => {
-    const [, month, day] = iso.split("-");
-    return `${Number(month)}月${Number(day)}日`;
-  };
-  return `${fmt(start)}〜${fmt(end)}`;
-}
-
-function groupRowsByYear(rows: CashflowRow[]): { year: string; rows: CashflowRow[] }[] {
-  const groups: { year: string; rows: CashflowRow[] }[] = [];
-  for (const row of rows) {
-    const year = row.period.start.slice(0, 4);
-    const current = groups[groups.length - 1];
-    if (!current || current.year !== year) groups.push({ year, rows: [row] });
-    else current.rows.push(row);
-  }
-  return groups;
-}
-
-function BasePlanForm({
-  base,
+function OpeningForm({
+  openingPeriodStart,
+  aichiOpening,
+  docomoOpening,
+  salaryRetain,
   saved,
-  accounts,
 }: {
-  base: CashflowPlanAmounts;
+  openingPeriodStart: string;
+  aichiOpening: number;
+  docomoOpening: number;
+  salaryRetain: number;
   saved: boolean;
-  accounts: { id: string; name: string }[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -308,35 +241,24 @@ function BasePlanForm({
       className="grid gap-3 rounded-xl border border-line/80 bg-surface p-4"
       action={(fd) => {
         startTransition(async () => {
-          const res = await saveCashflowPlan(fd);
+          const res = await saveCashflowBanks(fd);
           setError(res && "error" in res ? res.error ?? null : null);
           if (!res || !("error" in res) || !res.error) router.refresh();
         });
       }}
     >
       <div>
-        <h2 className="text-sm font-bold">基本の毎月見込み</h2>
+        <h2 className="text-sm font-bold">開始残高</h2>
         <p className="mt-1 text-xs text-muted">
-          先の期間は同じ金額です。各期の「編集」で、その期間だけ変えられます。
-          {saved ? "" : " 初期値はいまのデイリー予算と交通費予算です。"}
+          {monthDayLabel(openingPeriodStart, openingPeriodStart)}の、給料が入る前の残高です。この残高から、あいち銀行に残す給料は引きません。残す額は毎月この数字を使い、各期の編集でその月だけ変えられます。
+          {saved ? "" : " まだ保存していないので、表示中の金額は初期値です。"}
         </p>
       </div>
+      <input type="hidden" name="opening_period_start" value={openingPeriodStart} />
       <div className="grid gap-2 sm:grid-cols-3">
-        <MoneyField name="daily_budget" label="デイリー予算額" defaultValue={base.daily} />
-        <MoneyField name="transport_budget" label="交通費予算額" defaultValue={base.transport} />
-        <MoneyField name="adjustment" label="調整金額" defaultValue={base.adjustment} />
-        <AccountSelect
-          name="daily_account_id"
-          label="デイリーの支出元"
-          accounts={accounts}
-          defaultValue={base.dailyAccountId ?? ""}
-        />
-        <AccountSelect
-          name="transport_account_id"
-          label="交通費の支出元"
-          accounts={accounts}
-          defaultValue={base.transportAccountId ?? ""}
-        />
+        <MoneyField name="aichi_opening" label="あいち銀行の開始" defaultValue={aichiOpening} />
+        <MoneyField name="docomo_opening" label="ドコモ銀行の開始" defaultValue={docomoOpening} />
+        <MoneyField name="salary_retain" label="給料のうちあいち銀行に残す額" defaultValue={salaryRetain} min={0} />
       </div>
       {error ? <p className="text-sm text-expense">{error}</p> : null}
       <button
@@ -344,7 +266,7 @@ function BasePlanForm({
         disabled={pending}
         className="w-fit rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
       >
-        {pending ? "保存しています…" : "基本を保存"}
+        {pending ? "保存しています…" : "開始残高を保存"}
       </button>
     </form>
   );
@@ -353,35 +275,40 @@ function BasePlanForm({
 function PeriodForm({
   periodStart,
   label,
-  daily,
-  transport,
-  adjustment,
+  salaryRetain,
+  aichiAdjustment,
+  docomoAdjustment,
   custom,
 }: {
   periodStart: string;
   label: string;
-  daily: number;
-  transport: number;
-  adjustment: number;
+  salaryRetain: number;
+  aichiAdjustment: number;
+  docomoAdjustment: number;
   custom: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   return (
     <form
       className="grid gap-2"
       action={(fd) => {
         startTransition(async () => {
-          const res = await saveCashflowPeriod(fd);
+          const res = await saveCashflowBankPeriod(fd);
           setError(res && "error" in res ? res.error ?? null : null);
+          if (!res || !("error" in res) || !res.error) router.refresh();
         });
       }}
     >
       <p className="text-xs text-muted">{label}</p>
+      <p className="text-xs text-muted">
+        あいち銀行に残す額は、この期の給料から回す分です。調整は期末へ足します。マイナスにすると期末が減ります。翌月の期首は、調整したあとの期末です。
+      </p>
       <input type="hidden" name="period_start" value={periodStart} />
-      <MoneyField name="daily_budget" label="デイリー予算額" defaultValue={daily} />
-      <MoneyField name="transport_budget" label="交通費予算額" defaultValue={transport} />
-      <MoneyField name="adjustment" label="調整金額" defaultValue={adjustment} />
+      <MoneyField name="salary_retain" label="あいち銀行に残す給料" defaultValue={salaryRetain} min={0} />
+      <MoneyField name="aichi_adjustment" label="あいち銀行の調整" defaultValue={aichiAdjustment} />
+      <MoneyField name="docomo_adjustment" label="ドコモ銀行の調整" defaultValue={docomoAdjustment} />
       {error ? <p className="text-sm text-expense">{error}</p> : null}
       <button
         type="submit"
@@ -398,278 +325,85 @@ function PeriodForm({
           disabled={pending}
           className="text-left text-xs text-muted hover:text-expense"
         >
-          基本の金額に戻す
+          基本の残す額に戻し、調整を消す
         </button>
       ) : null}
     </form>
   );
 }
 
-function EndingBreakdown({
-  breakdown,
-  savings,
-  openingLabel,
-}: {
-  breakdown: CashflowEndingBreakdown;
-  savings: number;
-  openingLabel: string;
-}) {
-  const departments = breakdown.accounts.reduce((sum, line) => sum + line.ending, 0);
+function PeriodBreakdown({ row }: { row: CashflowRow }) {
   return (
-    <div className="grid gap-3 text-sm">
-      <p className="text-xs text-muted">
-        {breakdown.budgetsApplied
-          ? "割り振った収入と、取引・生活費・交通費を各部門に入れた期末です。未割り振りは、部門が決まっていない分です。"
-          : "今日の各部門に、この期末までに入る予定の入出金を足しています。デイリー・交通費・調整は部門が決まっていないので、あとからまとめて引いています。"}
-      </p>
-      <ul className="grid text-xs">
-        {breakdown.accounts.map((line) => (
-          <li key={line.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 border-t border-line py-1.5">
-            <div className="min-w-0">
-              <p className="truncate">
-                {line.name}
-                {line.savings ? <span className="ml-1 text-muted">貯金</span> : null}
-              </p>
-              <p className="text-[11px] text-muted">
-                {openingLabel} {formatYen(line.now)}
-                <span className="mx-1">/</span>
-                この先 {line.change === 0 ? "—" : formatYen(line.change)}
-              </p>
-            </div>
-            <p className="font-medium tabular-nums">{formatYen(line.ending)}</p>
-          </li>
-        ))}
-      </ul>
-      <dl className="grid gap-1 text-xs">
-        <BreakdownLine label="部門の合計" amount={formatYen(departments)} />
-        {breakdown.unassigned !== 0 ? (
-          <BreakdownLine
-            label={breakdown.budgetsApplied ? "未割り振り" : "部門なし"}
-            amount={formatYen(breakdown.unassigned)}
-          />
-        ) : null}
-        {breakdown.budgetsApplied ? null : (
-          <>
-            <BreakdownLine label="デイリー" amount={`-${formatYen(breakdown.daily)}`} expense />
-            <BreakdownLine label="交通費" amount={`-${formatYen(breakdown.transport)}`} expense />
-            <BreakdownLine
-              label="調整"
-              amount={`${breakdown.adjustment > 0 ? "-" : breakdown.adjustment < 0 ? "+" : ""}${formatYen(Math.abs(breakdown.adjustment))}`}
-              expense={breakdown.adjustment > 0}
-            />
-          </>
-        )}
-        <BreakdownLine label="貯金込み" amount={formatYen(breakdown.total)} strong rule />
-        <BreakdownLine label="貯金を除く" amount={formatYen(breakdown.total - savings)} strong />
-      </dl>
+    <div className="grid gap-4 text-sm">
+      <BankBreakdown
+        title={CASHFLOW_AICHI_BANK}
+        bank={row.aichi}
+        adIncome={row.adIncome}
+        items={row.items.filter((item) => item.accountName === CASHFLOW_AICHI_BANK)}
+      />
+      <BankBreakdown
+        title={CASHFLOW_DOCOMO_BANK}
+        bank={row.docomo}
+        adIncome={0}
+        items={row.items.filter((item) => item.accountName === CASHFLOW_DOCOMO_BANK)}
+      />
+      {row.outside.length > 0 ? (
+        <div>
+          <p className="text-xs font-medium">この表に入らない取引</p>
+          <ul className="mt-1 grid text-xs">
+            {row.outside.map((item) => (
+              <li key={`${item.accountName}-${item.item}-${item.amount}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-line py-1.5">
+                <span className="min-w-0 truncate">
+                  {item.item}
+                  <span className="ml-1 text-muted">{item.accountName}</span>
+                </span>
+                <span className="tabular-nums">{formatYen(item.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function IncomeAllocationForm({
-  incomeRules,
-  accounts,
-  allocations,
-}: {
-  incomeRules: { id: string; name: string; amount: number }[];
-  accounts: { id: string; name: string }[];
-  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-  if (incomeRules.length === 0) return null;
-  return (
-    <form
-      className="grid gap-3 rounded-xl border border-line/80 bg-surface p-4"
-      action={(fd) => {
-        startTransition(async () => {
-          const res = await saveIncomeAllocations(fd);
-          setError(res && "error" in res ? res.error ?? null : null);
-          if (!res || !("error" in res) || !res.error) router.refresh();
-        });
-      }}
-    >
-      <div>
-        <h2 className="text-sm font-bold">収入の割り振り</h2>
-        <p className="mt-1 text-xs text-muted">
-          毎月の基本です。収入の合計は変わりません。残った額は部門に入らず、未割り振りになります。各期の「割り振り」で、その期間だけ変えられます。
-        </p>
-      </div>
-      {incomeRules.map((rule) => (
-        <AllocationFields
-          key={rule.id}
-          ruleId={rule.id}
-          title={rule.name}
-          cap={rule.amount}
-          accounts={accounts}
-          initial={Object.fromEntries(
-            allocations
-              .filter((row) => row.scheduled_rule_id === rule.id)
-              .map((row) => [row.asset_account_id, row.amount]),
-          )}
-        />
-      ))}
-      {error ? <p className="text-sm text-expense">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-fit rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
-      >
-        {pending ? "保存しています…" : "割り振りを保存"}
-      </button>
-    </form>
-  );
-}
-
-function PeriodAllocationForm({
-  periodStart,
-  incomes,
-  incomeRules,
-  accounts,
-  allocations,
-  periodAllocations,
-}: {
-  periodStart: string;
-  incomes: { ruleId: string; amount: number }[];
-  incomeRules: { id: string; name: string; amount: number }[];
-  accounts: { id: string; name: string }[];
-  allocations: { scheduled_rule_id: string; asset_account_id: string; amount: number }[];
-  periodAllocations: {
-    period_start: string;
-    scheduled_rule_id: string;
-    asset_account_id: string;
-    amount: number;
-  }[];
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-  const names = new Map(incomeRules.map((rule) => [rule.id, rule.name]));
-  const custom = periodAllocations.some((row) => String(row.period_start).slice(0, 10) === periodStart);
-  return (
-    <form
-      className="grid gap-3"
-      action={(fd) => {
-        startTransition(async () => {
-          const res = await saveIncomeAllocations(fd);
-          setError(res && "error" in res ? res.error ?? null : null);
-          if (!res || !("error" in res) || !res.error) router.refresh();
-        });
-      }}
-    >
-      <input type="hidden" name="period_start" value={periodStart} />
-      <p className="text-xs text-muted">この期間に入る収入を、部門へ割り振ります。空のまま保存すると基本に戻ります。</p>
-      {[...incomes].filter((income) => isAllocatableIncome(names.get(income.ruleId) ?? "")).sort((a, b) => compareIncomeRules(
-        { name: names.get(a.ruleId) ?? "" },
-        { name: names.get(b.ruleId) ?? "" },
-      )).map((income) => {
-        const periodRows = periodAllocations.filter(
-          (row) =>
-            String(row.period_start).slice(0, 10) === periodStart &&
-            row.scheduled_rule_id === income.ruleId,
-        );
-        const source = periodRows.length > 0 ? periodRows : allocations.filter((row) => row.scheduled_rule_id === income.ruleId);
-        return (
-          <AllocationFields
-            key={income.ruleId}
-            ruleId={income.ruleId}
-            title={names.get(income.ruleId) ?? "収入"}
-            cap={income.amount}
-            accounts={accounts}
-            initial={Object.fromEntries(source.map((row) => [row.asset_account_id, row.amount]))}
-          />
-        );
-      })}
-      {error ? <p className="text-sm text-expense">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-60"
-      >
-        {pending ? "保存しています…" : custom ? "この期の割り振りを保存" : "この期だけ保存"}
-      </button>
-    </form>
-  );
-}
-
-function AllocationFields({
-  ruleId,
+function BankBreakdown({
   title,
-  cap,
-  accounts,
-  initial,
+  bank,
+  adIncome,
+  items,
 }: {
-  ruleId: string;
   title: string;
-  cap: number;
-  accounts: { id: string; name: string }[];
-  initial: Record<string, number>;
-}) {
-  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(accounts.map((account) => [account.id, String(initial[account.id] ?? "")])),
-  );
-  const used = accounts.reduce((sum, account) => sum + (Number(amounts[account.id]) || 0), 0);
-  const left = cap - used;
-  return (
-    <fieldset className="grid gap-2 rounded-lg border border-line/80 p-3">
-      <legend className="px-1 text-sm font-medium">
-        {title}
-        <span className="ml-2 font-normal text-muted">{formatYen(cap)}</span>
-      </legend>
-      <input type="hidden" name={`cap__${ruleId}`} value={cap} />
-      <div className="grid gap-2 sm:grid-cols-2">
-        {accounts.map((account) => (
-          <label key={account.id} className="grid gap-1 text-sm">
-            <span className="text-muted">{account.name}</span>
-            <input
-              name={`a__${ruleId}__${account.id}`}
-              type="number"
-              min={0}
-              value={amounts[account.id] ?? ""}
-              onChange={(event) =>
-                setAmounts((current) => ({ ...current, [account.id]: event.target.value }))
-              }
-              className="rounded-md border border-line bg-white px-3 py-2"
-              placeholder="0"
-            />
-          </label>
-        ))}
-      </div>
-      <p className={`text-xs ${left < 0 ? "text-expense" : "text-muted"}`}>
-        残り {formatYen(left)}
-      </p>
-    </fieldset>
-  );
-}
-
-function AccountSelect({
-  name,
-  label,
-  accounts,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  accounts: { id: string; name: string }[];
-  defaultValue: string;
+  bank: CashflowBankColumn;
+  adIncome: number;
+  items: CashflowAuditLine[];
 }) {
   return (
-    <label className="grid gap-1 text-sm">
-      <span className="text-muted">{label}</span>
-      <select
-        name={name}
-        defaultValue={defaultValue}
-        className="rounded-md border border-line bg-white px-3 py-2"
-      >
-        <option value="">指定しない</option>
-        {accounts.map((account) => (
-          <option key={account.id} value={account.id}>
-            {account.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div>
+      <p className="font-medium">{title}</p>
+      <dl className="mt-1 grid gap-1 text-xs">
+        <BreakdownLine label="期首" amount={formatYen(bank.opening)} />
+        <BreakdownLine label="給料" amount={formatYen(bank.salary)} />
+        {adIncome !== 0 ? <BreakdownLine label="広告収入" amount={formatYen(adIncome)} /> : null}
+        {bank.otherIncome !== 0 ? <BreakdownLine label="その他収入" amount={formatYen(bank.otherIncome)} /> : null}
+        <BreakdownLine label="支出" amount={formatYen(-bank.expense)} expense />
+        {bank.adjustment !== 0 ? <BreakdownLine label="調整" amount={formatYen(bank.adjustment)} /> : null}
+        <BreakdownLine label="期末" amount={formatYen(bank.ending)} strong rule />
+      </dl>
+      {items.length > 0 ? (
+        <ul className="mt-2 grid text-xs">
+          {items.map((item) => (
+            <li key={`${item.date}-${item.kind}-${item.item}-${item.amount}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-line py-1.5">
+              <span className="min-w-0 truncate">
+                {item.item}
+                <span className="ml-1 text-muted">{item.kind}</span>
+              </span>
+              <span className="tabular-nums">{formatYen(item.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -687,12 +421,8 @@ function BreakdownLine({
   rule?: boolean;
 }) {
   return (
-    <div
-      className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 ${
-        rule ? "border-t border-line pt-1" : ""
-      } ${strong ? "text-sm font-semibold" : ""}`}
-    >
-      <dt className="min-w-0">{label}</dt>
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 ${rule ? "border-t border-line pt-1" : ""} ${strong ? "text-sm font-semibold" : ""}`}>
+      <dt>{label}</dt>
       <dd className={`tabular-nums ${expense ? "text-expense" : ""}`}>{amount}</dd>
     </div>
   );
@@ -702,10 +432,12 @@ function MoneyField({
   name,
   label,
   defaultValue,
+  min,
 }: {
   name: string;
   label: string;
   defaultValue: number;
+  min?: number;
 }) {
   return (
     <label className="grid gap-1 text-sm">
@@ -714,9 +446,30 @@ function MoneyField({
         name={name}
         type="number"
         required
+        min={min}
         defaultValue={defaultValue}
         className="rounded-md border border-line bg-white px-3 py-2"
       />
     </label>
   );
+}
+
+function monthDayLabel(start: string, end: string): string {
+  const fmt = (iso: string) => {
+    const [, month, day] = iso.split("-");
+    return `${Number(month)}月${Number(day)}日`;
+  };
+  if (start === end) return fmt(start);
+  return `${fmt(start)}〜${fmt(end)}`;
+}
+
+function groupRowsByYear(rows: CashflowRow[]): { year: string; rows: CashflowRow[] }[] {
+  const groups: { year: string; rows: CashflowRow[] }[] = [];
+  for (const row of rows) {
+    const year = row.period.start.slice(0, 4);
+    const current = groups[groups.length - 1];
+    if (!current || current.year !== year) groups.push({ year, rows: [row] });
+    else current.rows.push(row);
+  }
+  return groups;
 }

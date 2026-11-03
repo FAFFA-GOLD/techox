@@ -21,7 +21,6 @@ export async function GET() {
     today: model.today,
     rows,
     lines: audit.lines,
-    accounts: model.accounts,
   });
   return new NextResponse(new Uint8Array(body), {
     status: 200,

@@ -8,13 +8,11 @@ export default async function ForecastPage() {
   return (
     <CashflowClient
       rows={rows}
-      savings={model.savings}
-      base={model.forecast.base}
+      openingPeriodStart={model.banks.openingPeriodStart}
+      aichiOpening={model.banks.aichiOpening}
+      docomoOpening={model.banks.docomoOpening}
+      salaryRetain={model.banks.salaryRetain}
       savedBase={model.savedBase}
-      accounts={model.accounts.map((account) => ({ id: account.id, name: account.name }))}
-      incomeRules={model.incomeRules}
-      allocations={model.allocations}
-      periodAllocations={model.periodAllocations}
       loadError={model.loadError}
     />
   );

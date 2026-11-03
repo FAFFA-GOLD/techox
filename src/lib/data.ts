@@ -538,6 +538,10 @@ export type CashflowPlanRow = {
   adjustment: number;
   daily_account_id?: string | null;
   transport_account_id?: string | null;
+  salary_retain?: number | null;
+  aichi_opening?: number | null;
+  docomo_opening?: number | null;
+  opening_period_start?: string | null;
 };
 
 export type CashflowPeriodRow = {
@@ -545,6 +549,9 @@ export type CashflowPeriodRow = {
   daily_budget: number;
   transport_budget: number;
   adjustment: number;
+  salary_retain?: number | null;
+  aichi_adjustment?: number | null;
+  docomo_adjustment?: number | null;
 };
 
 export type CashflowAllocationRow = {
@@ -572,11 +579,22 @@ export async function fetchCashflowPlan(): Promise<{
     return { base: null, periods: [], allocations: [], periodAllocations: [], error: null };
   }
   const empty = { base: null, periods: [], allocations: [], periodAllocations: [], error: null };
+  let bankColumnsMissing = false;
   let baseResult = await supabase
     .from("cashflow_plan")
-    .select("daily_budget, transport_budget, adjustment, daily_account_id, transport_account_id")
+    .select(
+      "daily_budget, transport_budget, adjustment, daily_account_id, transport_account_id, salary_retain, aichi_opening, docomo_opening, opening_period_start",
+    )
     .eq("user_id", user.id)
     .maybeSingle();
+  if (baseResult.error && /salary_retain|aichi_opening|docomo_opening|opening_period_start/.test(baseResult.error.message)) {
+    bankColumnsMissing = true;
+    baseResult = await supabase
+      .from("cashflow_plan")
+      .select("daily_budget, transport_budget, adjustment, daily_account_id, transport_account_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+  }
   if (baseResult.error?.message.includes("daily_account_id")) {
     baseResult = await supabase
       .from("cashflow_plan")
@@ -586,8 +604,19 @@ export async function fetchCashflowPlan(): Promise<{
   }
   const periodResult = await supabase
     .from("cashflow_plan_periods")
-    .select("period_start, daily_budget, transport_budget, adjustment")
+    .select("period_start, daily_budget, transport_budget, adjustment, salary_retain, aichi_adjustment, docomo_adjustment")
     .eq("user_id", user.id);
+  let periodRows = (periodResult.data as CashflowPeriodRow[] | null) ?? [];
+  let periodError = periodResult.error;
+  if (periodError && /salary_retain|aichi_adjustment|docomo_adjustment/.test(periodError.message)) {
+    bankColumnsMissing = true;
+    const periodFallback = await supabase
+      .from("cashflow_plan_periods")
+      .select("period_start, daily_budget, transport_budget, adjustment")
+      .eq("user_id", user.id);
+    periodRows = (periodFallback.data as CashflowPeriodRow[] | null) ?? [];
+    periodError = periodFallback.error;
+  }
   const allocationResult = await supabase
     .from("cashflow_income_allocations")
     .select("scheduled_rule_id, asset_account_id, amount")
@@ -598,14 +627,16 @@ export async function fetchCashflowPlan(): Promise<{
     .eq("user_id", user.id);
   const error =
     baseResult.error?.message ??
-    periodResult.error?.message ??
+    periodError?.message ??
     allocationResult.error?.message ??
     periodAllocationResult.error?.message ??
-    null;
-  if (!baseResult.data && !periodResult.data && error) return { ...empty, error };
+    (bankColumnsMissing
+      ? "銀行別のキャッシュフローには supabase/migrations/025_cashflow_banks.sql の実行が必要です"
+      : null);
+  if (!baseResult.data && periodRows.length === 0 && error) return { ...empty, error };
   return {
     base: (baseResult.data as CashflowPlanRow | null) ?? null,
-    periods: (periodResult.data as CashflowPeriodRow[]) ?? [],
+    periods: periodRows,
     allocations: (allocationResult.data as CashflowAllocationRow[]) ?? [],
     periodAllocations: (periodAllocationResult.data as CashflowAllocationPeriodRow[]) ?? [],
     error,
