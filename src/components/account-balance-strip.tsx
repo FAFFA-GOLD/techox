@@ -146,6 +146,7 @@ function BalanceRow({
             className="relative flex items-start justify-between gap-1.5 overflow-hidden rounded-xl border border-line/80 bg-surface px-2.5 py-2"
           >
             {title === "銀行" ? <BankWatermark /> : null}
+            {title === "電子マネー" ? <EmoneyWatermark name={account.name} /> : null}
             <div className="relative min-w-0">
               <p className="truncate text-xs text-muted">{account.name}</p>
               <p className="mt-0.5 text-base font-bold tabular-nums sm:text-lg">
@@ -183,18 +184,76 @@ function BalanceRow({
   );
 }
 
+const watermarkClass =
+  "pointer-events-none absolute -bottom-2 -left-1 h-16 w-16 text-accent opacity-25";
+
 function BankWatermark() {
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 64 64"
-      className="pointer-events-none absolute -bottom-2 -left-1 h-16 w-16 text-accent opacity-25"
-    >
+    <svg aria-hidden viewBox="0 0 64 64" className={watermarkClass}>
       <path
         fill="currentColor"
         d="M32 6 6 22h52L32 6zm-22 18h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zm10 0h4v20h-4V24zM4 46h56v4H4v-4zm2 6h52v4H6v-4z"
       />
     </svg>
+  );
+}
+
+function EmoneyWatermark({ name }: { name: string }) {
+  const kind = emoneyMark(name);
+  return (
+    <svg aria-hidden viewBox="0 0 64 64" className={watermarkClass}>
+      {kind === "paypay" ? <PayPayMark /> : null}
+      {kind === "rpay" ? <RpayMark /> : null}
+      {kind === "suica" ? <SuicaMark /> : null}
+      {kind === "card" ? <CardMark /> : null}
+    </svg>
+  );
+}
+
+function emoneyMark(name: string): "paypay" | "rpay" | "suica" | "card" {
+  if (/paypay/i.test(name)) return "paypay";
+  if (/r-?pay|楽天ペイ/i.test(name)) return "rpay";
+  if (/suica/i.test(name)) return "suica";
+  return "card";
+}
+
+function PayPayMark() {
+  return (
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      d="M22 4h20a6 6 0 0 1 6 6v44a6 6 0 0 1-6 6H22a6 6 0 0 1-6-6V10a6 6 0 0 1 6-6zm4 10v28h12V14H26zm4 34h4v3h-4v-3z"
+    />
+  );
+}
+
+function RpayMark() {
+  return (
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      d="M6 16h52a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4zm0 8h56v7H4v-7zM12 36h12v8H12v-8z"
+    />
+  );
+}
+
+function SuicaMark() {
+  return (
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      d="M12 18h40a8 8 0 0 1 8 8v18H4V26a8 8 0 0 1 8-8zm6 8h10v12H18V26zm18 0h10v12H36V26zM8 46h12v8H8v-8zm36 0h12v8H44v-8z"
+    />
+  );
+}
+
+function CardMark() {
+  return (
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      d="M8 14h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V18a4 4 0 0 1 4-4zm6 8h14v10H14V22z"
+    />
   );
 }
 
