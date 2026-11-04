@@ -542,31 +542,29 @@ export function CalendarClient({
               </ul>
             ) : null}
           </div>
-          <div className="rounded-xl border border-expense/35 bg-expense/10 p-4">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setTxOpen(true)}
-                  className="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
-                >
-                  一覧
-                </button>
-                <NewScheduledRuleButton
-                  accounts={accounts}
-                  categories={categories}
-                  buttonLabel="登録"
-                  buttonClassName="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
-                />
-              </div>
-            </div>
+          <div className="flex h-full flex-col rounded-xl border border-expense/35 bg-expense/10 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted">総支出</p>
             <p className="mt-2 text-2xl font-bold tabular-nums text-expense">
               {formatYen(monthExpenseAll)}
             </p>
             <p className="mt-1 text-xs text-muted">
               交通費・固定費含む当月支出合計
             </p>
+            <div className="mt-auto flex justify-end gap-1 pt-3">
+              <button
+                type="button"
+                onClick={() => setTxOpen(true)}
+                className="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+              >
+                一覧
+              </button>
+              <NewScheduledRuleButton
+                accounts={accounts}
+                categories={categories}
+                buttonLabel="登録"
+                buttonClassName="rounded-md border border-line bg-white px-2 py-1 text-xs text-muted hover:text-ink"
+              />
+            </div>
           </div>
           <div className="rounded-xl border border-accent/40 bg-accent/10 p-4">
             <p className="text-xs uppercase tracking-wide text-muted">
@@ -618,26 +616,16 @@ export function CalendarClient({
             .map((c) => (
             <div
               key={c.id}
-              className="rounded-xl border border-line/80 bg-surface p-2.5 sm:p-4"
+              className="flex h-full flex-col rounded-xl border border-line/80 bg-surface p-2.5 sm:p-4"
             >
               <div className="flex items-center gap-2">
                 <span
-                  className="h-2.5 w-2.5 rounded-full"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: c.color }}
                 />
-                <p className="flex-1 text-xs uppercase tracking-wide text-muted">
+                <p className="text-xs uppercase tracking-wide text-muted">
                   {c.name}
                 </p>
-                {!c.shared && !c.miscChild ? (
-                  <EditPopover title={`${c.name}の月予算`}>
-                    <BudgetPopup
-                      category={
-                        categories.find((cat) => cat.id === c.id) ?? c
-                      }
-                      monthKey={monthKey}
-                    />
-                  </EditPopover>
-                ) : null}
               </div>
               {c.shared ? (
                 <>
@@ -697,6 +685,18 @@ export function CalendarClient({
                   ) : null}
                 </>
               )}
+              {!c.shared && !c.miscChild ? (
+                <div className="mt-auto flex justify-end pt-3">
+                  <EditPopover title={`${c.name}の月予算`}>
+                    <BudgetPopup
+                      category={
+                        categories.find((cat) => cat.id === c.id) ?? c
+                      }
+                      monthKey={monthKey}
+                    />
+                  </EditPopover>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
