@@ -310,7 +310,7 @@ export function CalendarClient({
       .map((account) => account.id),
   );
   const docomoPaymentTotal = entries.reduce((sum, entry) => {
-    if (isIncomeEntry(entry) || !entry.asset_account_id) return sum;
+    if (isIncomeEntry(entry) || entry.scheduled_rule_id || !entry.asset_account_id) return sum;
     if (!docomoAccountIds.has(entry.asset_account_id)) return sum;
     return sum + entry.amount;
   }, 0);
