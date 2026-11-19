@@ -304,6 +304,16 @@ export function CalendarClient({
   const transportTotal = transportCategoryId
     ? (spentByCategoryId.get(transportCategoryId) ?? 0)
     : 0;
+  const docomoAccountIds = new Set(
+    accounts
+      .filter((account) => account.name === "ドコモ銀行" && !account.archived)
+      .map((account) => account.id),
+  );
+  const docomoPaymentTotal = entries.reduce((sum, entry) => {
+    if (isIncomeEntry(entry) || !entry.asset_account_id) return sum;
+    if (!docomoAccountIds.has(entry.asset_account_id)) return sum;
+    return sum + entry.amount;
+  }, 0);
   const paceExcludedIds = useMemo(() => {
     const ids = new Set(excludedCategoryIds);
     for (const c of categories) {
@@ -595,6 +605,9 @@ export function CalendarClient({
               </span>
               <span className="text-sm tabular-nums text-muted">
                 交通費 {formatYen(transportTotal)}
+              </span>
+              <span className="text-sm tabular-nums text-muted">
+                ドコモ銀行 {formatYen(docomoPaymentTotal)}
               </span>
             </p>
             <p className="mt-1 text-sm tabular-nums text-muted">
