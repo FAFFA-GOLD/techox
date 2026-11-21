@@ -520,6 +520,10 @@ export function CalendarClient({
         today={todayStr}
         monthEnd={todayMonthEnd}
         laterMonthEnd={laterMonthEnd}
+        monthKey={monthKey}
+        monthListEntries={entries}
+        rules={rules}
+        categories={categories}
       />
 
       <ProjectedRemainder
