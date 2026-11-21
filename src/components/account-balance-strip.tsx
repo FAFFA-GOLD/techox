@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { upsertBalanceSnapshot } from "@/app/actions";
 import { todayKeyInTimeZone } from "@/lib/dates";
@@ -13,8 +13,11 @@ import {
 } from "@/lib/account-display";
 import {
   DEFAULT_SAVINGS_ACCOUNTS,
+  isIncomeEntry,
   isSavingsAccountName,
+  type DailySpendCategory,
   type DailySpendEntry,
+  type ScheduledRule,
 } from "@/lib/types";
 
 const miniButton =
@@ -27,6 +30,10 @@ export function AccountBalanceStrip({
   today,
   monthEnd,
   laterMonthEnd,
+  monthKey,
+  monthListEntries,
+  rules,
+  categories,
 }: {
   balances: AccountBalanceView[];
   monthEntries: DailySpendEntry[];
@@ -34,6 +41,10 @@ export function AccountBalanceStrip({
   today: string;
   monthEnd: string;
   laterMonthEnd: string | null;
+  monthKey: string;
+  monthListEntries: DailySpendEntry[];
+  rules: ScheduledRule[];
+  categories: DailySpendCategory[];
 }) {
   const banks = balances.filter((a) => a.kind === "bank");
   const emoney = balances.filter(
@@ -49,9 +60,36 @@ export function AccountBalanceStrip({
 
   return (
     <section className="grid gap-3">
-      <BalanceRow title="銀行" accounts={banks} forecastFor={forecastFor} today={today} />
-      <BalanceRow title="電子マネー" accounts={emoney} forecastFor={forecastFor} today={today} />
-      <BalanceRow title="貯金" accounts={savings} forecastFor={forecastFor} today={today} />
+      <BalanceRow
+        title="銀行"
+        accounts={banks}
+        forecastFor={forecastFor}
+        today={today}
+        monthKey={monthKey}
+        monthListEntries={monthListEntries}
+        rules={rules}
+        categories={categories}
+      />
+      <BalanceRow
+        title="電子マネー"
+        accounts={emoney}
+        forecastFor={forecastFor}
+        today={today}
+        monthKey={monthKey}
+        monthListEntries={monthListEntries}
+        rules={rules}
+        categories={categories}
+      />
+      <BalanceRow
+        title="貯金"
+        accounts={savings}
+        forecastFor={forecastFor}
+        today={today}
+        monthKey={monthKey}
+        monthListEntries={monthListEntries}
+        rules={rules}
+        categories={categories}
+      />
     </section>
   );
 }
@@ -129,11 +167,19 @@ function BalanceRow({
   accounts,
   forecastFor,
   today,
+  monthKey,
+  monthListEntries,
+  rules,
+  categories,
 }: {
   title: string;
   accounts: AccountBalanceView[];
   forecastFor: (account: AccountBalanceView) => AccountForecastDay[];
   today: string;
+  monthKey: string;
+  monthListEntries: DailySpendEntry[];
+  rules: ScheduledRule[];
+  categories: DailySpendCategory[];
 }) {
   if (accounts.length === 0) return null;
   return (
@@ -174,6 +220,10 @@ function BalanceRow({
                   account={account}
                   days={forecastFor(account)}
                   today={today}
+                  monthKey={monthKey}
+                  entries={monthListEntries}
+                  rules={rules}
+                  categories={categories}
                 />
               </EditPopover>
             </div>
@@ -261,13 +311,78 @@ function AccountLedger({
   account,
   days,
   today,
+  monthKey,
+  entries,
+  rules,
+  categories,
+}: {
+  account: AccountBalanceView;
+  days: AccountForecastDay[];
+  today: string;
+  monthKey: string;
+  entries: DailySpendEntry[];
+  rules: ScheduledRule[];
+  categories: DailySpendCategory[];
+}) {
+  const [tab, setTab] = useState<"plan" | "list">("plan");
+  return (
+    <div className="grid gap-3 text-sm">
+      <div className="flex gap-1">
+        <LedgerTab active={tab === "plan"} onClick={() => setTab("plan")}>
+          予定
+        </LedgerTab>
+        <LedgerTab active={tab === "list"} onClick={() => setTab("list")}>
+          一覧
+        </LedgerTab>
+      </div>
+      {tab === "plan" ? (
+        <ForecastPane account={account} days={days} today={today} />
+      ) : (
+        <MonthAccountList
+          accountId={account.id}
+          monthKey={monthKey}
+          entries={entries}
+          rules={rules}
+          categories={categories}
+        />
+      )}
+    </div>
+  );
+}
+
+function LedgerTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-3 py-1 text-xs ${
+        active ? "bg-accent text-white" : "border border-line bg-white text-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ForecastPane({
+  account,
+  days,
+  today,
 }: {
   account: AccountBalanceView;
   days: AccountForecastDay[];
   today: string;
 }) {
   return (
-    <div className="grid gap-3 text-sm">
+    <div className="grid gap-3">
       <p>
         いまの残高{" "}
         <span className="font-semibold tabular-nums">
@@ -314,6 +429,131 @@ function AccountLedger({
       )}
     </div>
   );
+}
+
+function MonthAccountList({
+  accountId,
+  monthKey,
+  entries,
+  rules,
+  categories,
+}: {
+  accountId: string;
+  monthKey: string;
+  entries: DailySpendEntry[];
+  rules: ScheduledRule[];
+  categories: DailySpendCategory[];
+}) {
+  const rulesById = new Map(rules.map((rule) => [rule.id, rule]));
+  const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+  const grouped = new Map<string, MonthAccountLine[]>();
+  let income = 0;
+  let expense = 0;
+  for (const entry of entries) {
+    if (accountIdOf(entry, rulesById) !== accountId) continue;
+    const date = String(entry.date).slice(0, 10);
+    if (!date.startsWith(monthKey)) continue;
+    const kind = isIncomeEntry(entry) ? "income" : "expense";
+    const amount = Number(entry.amount);
+    if (!Number.isFinite(amount)) continue;
+    if (kind === "income") income += amount;
+    else expense += amount;
+    const rule = entry.scheduled_rule_id ? rulesById.get(entry.scheduled_rule_id) : undefined;
+    const categoryName = entry.category_id
+      ? entry.daily_spend_categories?.name ?? categoryNames.get(entry.category_id) ?? null
+      : null;
+    const lines = grouped.get(date) ?? [];
+    lines.push({
+      id: entry.id,
+      label: entry.memo?.trim() || rule?.name || categoryName || (kind === "income" ? "収入" : "支出"),
+      amount,
+      kind,
+      source: entry.scheduled_rule_id ? "取引" : "手入力",
+    });
+    grouped.set(date, lines);
+  }
+  const dates = [...grouped.keys()].sort();
+  const net = income - expense;
+  const monthNumber = Number(monthKey.slice(5, 7));
+  return (
+    <div className="grid gap-3">
+      <p className="text-xs text-muted">
+        {monthNumber}月の収支です。取引登録と、日々の手入力を含みます。
+      </p>
+      {dates.length === 0 ? (
+        <p className="text-xs text-muted">この月の収支はありません。</p>
+      ) : (
+        <ul className="grid gap-2">
+          {dates.map((date) => {
+            const lines = grouped.get(date) ?? [];
+            const dayNet = lines.reduce(
+              (sum, line) => sum + (line.kind === "income" ? line.amount : -line.amount),
+              0,
+            );
+            return (
+              <li key={date} className="rounded-lg border border-line/80 px-3 py-2">
+                <p className="text-xs font-medium">{slashDate(date)}</p>
+                <ul className="mt-1 grid gap-0.5">
+                  {lines.map((line) => (
+                    <li key={line.id} className="flex justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        {line.label}
+                        <span className="ml-1 text-[10px] text-muted">{line.source}</span>
+                      </span>
+                      <span
+                        className={`shrink-0 tabular-nums ${
+                          line.kind === "income" ? "text-income" : "text-expense"
+                        }`}
+                      >
+                        {line.kind === "income" ? "+" : "−"}
+                        {formatYen(line.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p
+                  className={`mt-1 text-right text-xs font-semibold tabular-nums ${
+                    dayNet < 0 ? "text-expense" : "text-income"
+                  }`}
+                >
+                  この日の合計 {signedYen(dayNet)}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="text-xs text-muted">
+        収入 {formatYen(income)} · 支出 {formatYen(expense)}
+      </p>
+      <p className={`text-sm font-semibold tabular-nums ${net < 0 ? "text-expense" : "text-income"}`}>
+        月合計 {signedYen(net)}
+      </p>
+    </div>
+  );
+}
+
+type MonthAccountLine = {
+  id: string;
+  label: string;
+  amount: number;
+  kind: "income" | "expense";
+  source: "取引" | "手入力";
+};
+
+function accountIdOf(
+  entry: DailySpendEntry,
+  rulesById: Map<string, ScheduledRule>,
+): string | null {
+  if (entry.asset_account_id) return entry.asset_account_id;
+  if (!entry.scheduled_rule_id) return null;
+  return rulesById.get(entry.scheduled_rule_id)?.asset_account_id ?? null;
+}
+
+function signedYen(amount: number): string {
+  if (amount > 0) return `+${formatYen(amount)}`;
+  if (amount < 0) return `−${formatYen(Math.abs(amount))}`;
+  return formatYen(0);
 }
 
 function slashDate(iso: string): string {
